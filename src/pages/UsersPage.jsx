@@ -113,7 +113,7 @@ function UsersPage() {
 
   const handleEdit = (usuario) => {
     setEditando(true);
-    setUsuarioId(usuario._id);
+    setUsuarioId(usuario.id);
     setForm({
         nombre: usuario.nombre,
         email: usuario.email,
@@ -211,7 +211,7 @@ function UsersPage() {
               variant="contained"
               color="error"
               size="small"
-              onClick={() => handleDelete(params.row._id)}
+              onClick={() => handleDelete(params.row.id)}
             >
               Eliminar
             </Button>
@@ -267,7 +267,7 @@ function UsersPage() {
         <DataGrid
           rows={usuarios}
           columns={columns}
-          getRowId={(row) => row._id}
+          getRowId={(row) => row.id}
           pageSizeOptions={[5, 10, 20]}
           showToolbar
           initialState={{
