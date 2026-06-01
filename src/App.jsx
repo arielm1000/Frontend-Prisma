@@ -9,6 +9,7 @@ import DashboardLayout from './layouts/DashboardLayout';
 import PrivateRoute from './routes/PrivateRoute';
 import UsersPage from './pages/UsersPage';
 import RoleRoute from './routes/RoleRoute';
+import RolesPage from './pages/RolesPage';
 
 function App() {
   return (
@@ -41,6 +42,16 @@ function App() {
                   <UsersPage />
                 </DashboardLayout>
               </RoleRoute>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/roles"
+          element={
+            <PrivateRoute>
+              <DashboardLayout>
+                <RolesPage />
+              </DashboardLayout>
             </PrivateRoute>
           }
         />

@@ -6,21 +6,35 @@ import {
   Drawer,
   List,
   ListItem,
-  ListItemText
+  ListItemText,
+  ListItemButton
 } from '@mui/material';
 import Button from '@mui/material/Button';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
+import { useState } from 'react';
+import MenuIcon from '@mui/icons-material/Menu';
+import IconButton from '@mui/material/IconButton';
+import HomeIcon from '@mui/icons-material/Home';
+import PeopleIcon from '@mui/icons-material/People';
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
+
 const drawerWidth = 240;
+const drawerCollapsed = 70;
 
 function DashboardLayout({ children }) {
   const navigate = useNavigate();
   const { logout, usuario } = useAuth();
+  const [openMenu, setOpenMenu] = useState(true);
 
   const handleLogout = () => {
     logout();
     navigate('/');
+  };
+
+  const toggleMenu = () => {
+    setOpenMenu(!openMenu);
   };
 
   return (
@@ -41,6 +55,14 @@ function DashboardLayout({ children }) {
               alignItems: 'center'
             }}
           >
+            <IconButton
+              color="inherit"
+              edge="start"
+              onClick={toggleMenu}
+            >
+              <MenuIcon />
+            </IconButton>
+
             <Typography variant="h6">
               Proyecto Base
             </Typography>
@@ -54,7 +76,7 @@ function DashboardLayout({ children }) {
         </Toolbar>
       </AppBar>
       {/* SIDEBAR */}
-      <Drawer
+{/*       <Drawer
         variant="permanent"
         sx={{
           width: drawerWidth,
@@ -64,28 +86,88 @@ function DashboardLayout({ children }) {
             boxSizing: 'border-box'
           }
         }}
-      >
+      > */}
+        <Drawer
+          variant="permanent"
+          sx={{
+            width: openMenu
+              ? drawerWidth
+              : drawerCollapsed,
+            flexShrink: 0,
+            '& .MuiDrawer-paper': {
+              width: openMenu
+                ? drawerWidth
+                : drawerCollapsed,
+              overflowX: 'hidden',
+              boxSizing: 'border-box',
+              transition: 'width 0.3s ease'
+            }
+          }}
+        >
         <Toolbar />
         <Box sx={{ overflow: 'auto' }}>
           <List>
-            <ListItem
-              button
+            <ListItemButton
               component={Link}
               to="/home"
             >
-              <ListItemText primary="Inicio" />
-            </ListItem>
+{/*               <ListItemText primary="Inicio" /> */}
+              <>
+                <HomeIcon />
+                {
+                  openMenu && (
+                    <ListItemText
+                      primary="Inicio"
+                      sx={{ ml: 2 }}
+                    />
+                  )
+                }
+              </>
+            </ListItemButton>
             {
               usuario?.rol === 'admin' && (
-                <ListItem
-                  button
+                <ListItemButton
                   component={Link}
                   to="/users"
                 >
-                  <ListItemText
+{/*                   <ListItemText
                     primary="Usuarios"
-                  />
-                </ListItem>
+                  /> */}
+                  <>
+                    <PeopleIcon />
+                    {
+                      openMenu && (
+                        <ListItemText
+                          primary="Usuarios"
+                          sx={{ ml: 2 }}
+                        />
+                      )
+                    }
+                  </>                  
+                </ListItemButton>
+              )
+            }
+            {
+              usuario?.rol === 'admin' && (
+                <ListItemButton
+                  component={Link}
+                  to="/roles"
+                >
+{/*                   <ListItemText
+                    primary="Roles"
+                  /> */}
+                  <>
+                    <AdminPanelSettingsIcon />
+                    {
+                      openMenu && (
+                        <ListItemText
+                          primary="Roles"
+                          sx={{ ml: 2 }}
+                        />
+                      )
+                    }
+                  </>
+                </ListItemButton>
               )
             }
           </List>

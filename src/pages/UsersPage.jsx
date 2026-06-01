@@ -16,7 +16,10 @@ import {
   TextField,
   MenuItem,
   Snackbar,
-  Alert  
+  Alert,
+  FormControl,
+  InputLabel,
+  Select
 } from '@mui/material';
 
 import {
@@ -31,6 +34,7 @@ import {   getUsersRequest,
            deleteUserRequest} from '../services/user.service';
 
 import { useAuth } from '../context/AuthContext';
+import { getRoles } from '../services/role.service';
 
 function UsersPage() {
   const { usuario } = useAuth();
@@ -47,9 +51,11 @@ function UsersPage() {
     nombre: '',
     email: '',
     password: '',
-    rol: 'usuario',
+    //rol: 'usuario',
+    roleId: '',
     habilitado: true
- });
+    });
+  const [roles, setRoles] = useState([]);
   // =========================
   // CARGAR USUARIOS
   // =========================
@@ -69,7 +75,14 @@ function UsersPage() {
     setOpen(false);
     setEditando(false);
     setUsuarioId(null);
-  };
+    setForm({
+      nombre: '',
+      email: '',
+      password: '',
+      roleId: '',
+      habilitado: true
+    });    
+    };
   const handleChange = (e) => {
      setForm({
     ...form,
@@ -82,6 +95,14 @@ function UsersPage() {
         // =========================
         // EDITAR
         // =========================
+        if (!form.roleId) {
+          setSnackbar({
+            open: true,
+            message: 'Debe seleccionar un rol',
+            severity: 'warning'
+          });
+          return;
+        }
         if (editando) {
         await updateUserRequest(
             usuarioId,
@@ -103,7 +124,8 @@ function UsersPage() {
         nombre: '',
         email: '',
         password: '',
-        rol: 'usuario',
+        //rol: 'usuario',
+        roleId: '',
         habilitado: true
         });
     } catch (error) {
@@ -118,7 +140,8 @@ function UsersPage() {
         nombre: usuario.nombre,
         email: usuario.email,
         password: '',
-        rol: usuario.rol,
+        //rol: usuario.rol,
+        roleId: usuario.role?.id || '',
         habilitado: usuario.habilitado
     });
     setOpen(true);
@@ -148,9 +171,18 @@ function UsersPage() {
         });
     }
   };
+  const cargarRoles = async () => {
+    try {
+      const data = await getRoles();
+      setRoles(data);
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   useEffect(() => {
     cargarUsuarios();
+    cargarRoles();
   }, []);
   // =========================
   // COLUMNAS
@@ -166,11 +198,17 @@ function UsersPage() {
       headerName: 'Email',
       flex: 1
     },
-    {
+/*     {
       field: 'rol',
       headerName: 'Rol',
       flex: 1
-    },
+    }, */
+    {
+      field: 'role',
+      headerName: 'Rol',
+      width: 150,
+      valueGetter: (_, row) => row.role?.nombre
+    },    
     {
       field: 'habilitado',
       headerName: 'Estado',
@@ -322,7 +360,7 @@ function UsersPage() {
                 value={form.password}
                 onChange={handleChange}
                 />
-                <TextField
+{/*                 <TextField
                 select
                 label="Rol"
                 name="rol"
@@ -337,7 +375,29 @@ function UsersPage() {
                 <MenuItem value="usuario">
                     Usuario
                 </MenuItem>
-                </TextField>
+                </TextField> */}
+                <FormControl fullWidth margin="normal">
+
+                  <InputLabel>
+                    Rol
+                  </InputLabel>
+
+                  <Select
+                    name="roleId"
+                    value={form.roleId}
+                    label="Rol"
+                    onChange={handleChange}
+                  >
+                    {roles.map((role) => (
+                      <MenuItem
+                        key={role.id}
+                        value={role.id}
+                      >
+                        {role.nombre}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>                
             </DialogContent>
             <DialogActions>
                 <Button onClick={handleClose}>
