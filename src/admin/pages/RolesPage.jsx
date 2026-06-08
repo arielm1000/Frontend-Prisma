@@ -1,10 +1,10 @@
 import { Navigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import { getRoles,
          createRole,
          updateRole,
          deleteRole
-        } from '../services/role.service';
+        } from '../../services/role.service';
 import { useEffect, useState } from 'react';
 import { Paper, 
          Box, 
@@ -19,6 +19,10 @@ import { Paper,
          Alert
         } from '@mui/material';
 import { DataGrid, GridToolbar } from '@mui/x-data-grid';
+import IconButton from '@mui/material/IconButton';
+import Tooltip from '@mui/material/Tooltip';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
 
 function RolesPage() {
   const { usuario } = useAuth();
@@ -35,10 +39,6 @@ function RolesPage() {
     message: '',
     severity: 'success'
   });
-
-  if (usuario?.rol !== 'admin') {
-    return <Navigate to="/" />;
-  }
 
   const cargarRoles =
     async () => {
@@ -118,8 +118,30 @@ function RolesPage() {
   };    
 
   useEffect(() => {
-    cargarRoles();
+    let activo = true;
+
+    const cargarDatosIniciales = async () => {
+      try {
+        const data = await getRoles();
+
+        if (!activo) return;
+
+        setRoles(data);
+      } catch (error) {
+        console.log(error);
+      }
+    };
+
+    cargarDatosIniciales();
+
+    return () => {
+      activo = false;
+    };
   }, []);
+
+  if (usuario?.rol !== 'admin') {
+    return <Navigate to="/" />;
+  }
 
   const columns = [
     {
@@ -140,31 +162,32 @@ function RolesPage() {
     {
         field: 'acciones',
         headerName: 'Acciones',
-        width: 250,
+        width: 120,
+        sortable: false,
+        filterable: false,
         renderCell: (params) => (
-        <Box display="flex" gap={1}>
-            <Button
-            variant="contained"
-            size="small"
-            onClick={() =>
-                handleEdit(params.row)
-            }
-            >
-            Editar
-            </Button>
-            <Button
-            variant="contained"
-            color="error"
-            size="small"
-            onClick={() =>
-                handleDelete(params.row.id)
-            }
-            >
-            Eliminar
-            </Button>
-        </Box>
+          <Box display="flex" gap={1}>
+            <Tooltip title="Editar">
+              <IconButton
+                color="primary"
+                onClick={() => handleEdit(params.row)}
+              >
+                <EditIcon />
+              </IconButton>
+            </Tooltip>
+
+            <Tooltip title="Eliminar">
+              <IconButton
+                color="error"
+                onClick={() => handleDelete(params.row.id)}
+              >
+                <DeleteIcon />
+              </IconButton>
+            </Tooltip>
+          </Box>
         )
     }
+    
     ];
 
   return (
@@ -185,7 +208,6 @@ function RolesPage() {
           }}
         >
         <Typography variant="h4"
-                  variant="h4"
           sx={{
             flex: '0 1 auto',
             minWidth: 0,
@@ -219,6 +241,15 @@ function RolesPage() {
             }}            
             slots={{
             toolbar: GridToolbar
+            }}
+            slotProps={{
+              toolbar: {
+              csvOptions: {
+                delimiter: ';',
+                utf8WithBom: true,
+                fileName: 'roles'
+                }
+              }
             }}
         />
         <Dialog

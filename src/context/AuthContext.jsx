@@ -1,11 +1,5 @@
-import {
-  createContext,
-  useContext,
-  useState
-} from 'react';
-
-
-const AuthContext = createContext();
+import { useState } from 'react';
+import { AuthContext } from './auth-context';
 
 
 // =========================
@@ -82,12 +76,3 @@ export function AuthProvider({ children }) {
 }
 
 
-// =========================
-// HOOK
-// =========================
-
-export function useAuth() {
-
-  return useContext(AuthContext);
-
-}

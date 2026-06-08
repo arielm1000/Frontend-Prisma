@@ -24,17 +24,23 @@ import {
 
 import {
   DataGrid,
-  GridToolbar,
-  GridToolbarExport
+  GridToolbar
 } from '@mui/x-data-grid';
 
 import {   getUsersRequest,
            createUserRequest,
            updateUserRequest,
-           deleteUserRequest} from '../services/user.service';
+           deleteUserRequest,
+           getHistoricoUserRequest} from '../../services/user.service';
 
-import { useAuth } from '../context/AuthContext';
-import { getRoles } from '../services/role.service';
+import { useAuth } from '../../hooks/useAuth';
+import { getRoles } from '../../services/role.service';
+import { getLocalesRequest } from '../../services/local.service';
+import IconButton from '@mui/material/IconButton';
+import Tooltip from '@mui/material/Tooltip';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
+import HistoryIcon from '@mui/icons-material/History';
 
 function UsersPage() {
   const { usuario } = useAuth();
@@ -51,11 +57,14 @@ function UsersPage() {
     nombre: '',
     email: '',
     password: '',
-    //rol: 'usuario',
     roleId: '',
+    localId: '',
     habilitado: true
     });
   const [roles, setRoles] = useState([]);
+  const [locales, setLocales] = useState([]);
+  const [openHistorico, setOpenHistorico] = useState(false);
+  const [historico, setHistorico] = useState([]);
   // =========================
   // CARGAR USUARIOS
   // =========================
@@ -80,16 +89,28 @@ function UsersPage() {
       email: '',
       password: '',
       roleId: '',
+      localId: '',
       habilitado: true
     });    
     };
+  // const handleChange = (e) => {
+  //    setForm({
+  //   ...form,
+  //   [e.target.name]: e.target.value
+  //    });
+  // };
   const handleChange = (e) => {
-     setForm({
-    ...form,
-    [e.target.name]: e.target.value
-     });
+    const { name, value } = e.target;
+    setForm({
+      ...form,
+      [name]:
+        name === 'roleId' || name === 'localId'
+          ? value === ''
+            ? ''
+            : Number(value)
+          : value
+    });
   };
-  
   const handleSave = async () => {
     try {
         // =========================
@@ -103,6 +124,23 @@ function UsersPage() {
           });
           return;
         }
+
+        const rolSeleccionado = roles.find(
+          (role) => role.id === Number(form.roleId)
+        );
+
+        if (
+          rolSeleccionado?.nombre !== 'admin' &&
+          !form.localId
+        ) {
+          setSnackbar({
+            open: true,
+            message: 'Debe seleccionar un local',
+            severity: 'warning'
+          });
+          return;
+        }
+
         if (editando) {
         await updateUserRequest(
             usuarioId,
@@ -126,6 +164,7 @@ function UsersPage() {
         password: '',
         //rol: 'usuario',
         roleId: '',
+        localId: '',
         habilitado: true
         });
     } catch (error) {
@@ -140,8 +179,8 @@ function UsersPage() {
         nombre: usuario.nombre,
         email: usuario.email,
         password: '',
-        //rol: usuario.rol,
         roleId: usuario.role?.id || '',
+        localId: usuario.local?.id || usuario.localId || '',
         habilitado: usuario.habilitado
     });
     setOpen(true);
@@ -171,18 +210,51 @@ function UsersPage() {
         });
     }
   };
-  const cargarRoles = async () => {
+  
+  const handleHistorico = async (id) => {
     try {
-      const data = await getRoles();
-      setRoles(data);
-    } catch (error) {
-      console.error(error);
-    }
-  };
+      const data = await getHistoricoUserRequest(id);
 
+      setHistorico(data);
+      setOpenHistorico(true);
+    } catch (error) {
+      console.log(error);
+
+      setSnackbar({
+        open: true,
+        message: 'Error cargando historial',
+        severity: 'error'
+      });
+    }
+  };  
+  
   useEffect(() => {
-    cargarUsuarios();
-    cargarRoles();
+    let activo = true;
+
+    const cargarDatosIniciales = async () => {
+      try {
+        const [usuariosData, rolesData, localesData] =
+          await Promise.all([
+            getUsersRequest(),
+            getRoles(),
+            getLocalesRequest()
+          ]);
+
+        if (!activo) return;
+
+        setUsuarios(usuariosData);
+        setRoles(rolesData);
+        setLocales(localesData);
+      } catch (error) {
+        console.log(error);
+      }
+    };
+
+    cargarDatosIniciales();
+
+    return () => {
+      activo = false;
+    };
   }, []);
   // =========================
   // COLUMNAS
@@ -208,7 +280,14 @@ function UsersPage() {
       headerName: 'Rol',
       width: 150,
       valueGetter: (_, row) => row.role?.nombre
-    },    
+    },
+    {
+      field: 'local',
+      headerName: 'Local',
+      flex: 1,
+      valueGetter: (_, row) =>
+        row.local?.nombre || 'Sin local'
+    },        
     {
       field: 'habilitado',
       headerName: 'Estado',
@@ -231,33 +310,125 @@ function UsersPage() {
     {
       field: 'acciones',
       headerName: 'Acciones',
-      flex: 1,
+      width: 170,
+      sortable: false,
+      filterable: false,
       renderCell: (params) => {
         if (usuario?.rol !== 'admin') {
           return null;
         }
+
         return (
           <Box display="flex" gap={1}>
-            <Button
-              variant="contained"
-              size="small"
-              onClick={() => handleEdit(params.row)}
-            >
-              Editar
-            </Button>
-            <Button
-              variant="contained"
-              color="error"
-              size="small"
-              onClick={() => handleDelete(params.row.id)}
-            >
-              Eliminar
-            </Button>
+            <Tooltip title="Editar">
+              <IconButton
+                color="primary"
+                onClick={() => handleEdit(params.row)}
+              >
+                <EditIcon />
+              </IconButton>
+            </Tooltip>
+
+            <Tooltip title="Eliminar">
+              <IconButton
+                color="error"
+                onClick={() => handleDelete(params.row.id)}
+              >
+                <DeleteIcon />
+              </IconButton>
+            </Tooltip>
+
+            <Tooltip title="Historial">
+              <IconButton
+                color="secondary"
+                onClick={() => handleHistorico(params.row.id)}
+              >
+                <HistoryIcon />
+              </IconButton>
+            </Tooltip>
           </Box>
         );
       }
     }
   ];
+
+  const columnsHistorico = [
+    {
+      field: 'accion',
+      headerName: 'Acción',
+      width: 140,
+      renderCell: (params) => {
+        let color = 'default';
+
+        if (params.value === 'CREATE') color = 'success';
+        if (params.value === 'UPDATE') color = 'warning';
+        if (params.value === 'DELETE') color = 'error';
+
+        return (
+          <Chip
+            label={params.value}
+            color={color}
+            size="small"
+          />
+        );
+      }
+    },
+    {
+      field: 'fechaAccion',
+      headerName: 'Fecha',
+      width: 200,
+      valueGetter: (_, row) =>
+        new Date(row.fechaAccion).toLocaleString(
+          'es-AR',
+          {
+            timeZone: 'America/Argentina/Buenos_Aires'
+          }
+        )
+    },
+    {
+      field: 'usuario',
+      headerName: 'Realizado por',
+      width: 200,
+      valueGetter: (_, row) =>
+        row.usuario?.nombre || ''
+    },
+    {
+      field: 'nombre',
+      headerName: 'Nombre',
+      flex: 1
+    },
+    {
+      field: 'email',
+      headerName: 'Email',
+      flex: 1
+    },
+    {
+      field: 'roleNombre',
+      headerName: 'Rol',
+      width: 140,
+      valueGetter: (_, row) =>
+        row.roleNombre || ''
+    },
+    {
+      field: 'localNombre',
+      headerName: 'Local',
+      width: 160,
+      valueGetter: (_, row) =>
+        row.localNombre || 'Sin local'
+    },
+    {
+      field: 'habilitado',
+      headerName: 'Estado',
+      width: 120,
+      renderCell: (params) => (
+        <Chip
+          label={params.value ? 'Activo' : 'Inactivo'}
+          color={params.value ? 'success' : 'error'}
+          size="small"
+        />
+      )
+    }
+  ]; 
 
   return (
     <Box>
@@ -318,6 +489,15 @@ function UsersPage() {
           slots={{
             toolbar: GridToolbar
           }}
+            slotProps={{
+              toolbar: {
+              csvOptions: {
+                delimiter: ';',
+                utf8WithBom: true,
+                fileName: 'usuarios'
+                }
+              }
+            }}        
         />
       </Paper>
 
@@ -397,7 +577,32 @@ function UsersPage() {
                       </MenuItem>
                     ))}
                   </Select>
-                </FormControl>                
+                </FormControl> 
+                <FormControl fullWidth margin="normal">
+                  <InputLabel>
+                    Local
+                  </InputLabel>
+
+                  <Select
+                    name="localId"
+                    value={form.localId}
+                    label="Local"
+                    onChange={handleChange}
+                  >
+                    <MenuItem value="">
+                      Sin local
+                    </MenuItem>
+
+                    {locales.map((local) => (
+                      <MenuItem
+                        key={local.id}
+                        value={local.id}
+                      >
+                        {local.nombre}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>                               
             </DialogContent>
             <DialogActions>
                 <Button onClick={handleClose}>
@@ -415,6 +620,43 @@ function UsersPage() {
                 </Button>
             </DialogActions>
       </Dialog>
+  
+      <Dialog
+        open={openHistorico}
+        onClose={() => setOpenHistorico(false)}
+        fullWidth
+        maxWidth="lg"
+      >
+        <DialogTitle>
+          Historial Usuario
+        </DialogTitle>
+
+        <DialogContent>
+          <DataGrid
+            rows={historico}
+            columns={columnsHistorico}
+            getRowId={(row) => row.id}
+            autoHeight
+            pageSizeOptions={[5, 10, 20]}
+            initialState={{
+              pagination: {
+                paginationModel: {
+                  pageSize: 5
+                }
+              }
+            }}
+          />
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={() => setOpenHistorico(false)}
+          >
+            Cerrar
+          </Button>
+        </DialogActions>
+      </Dialog>  
+  
       <Snackbar
         open={snackbar.open}
         autoHideDuration={3000}

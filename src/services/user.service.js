@@ -44,3 +44,13 @@ export const deleteUserRequest = async (
   );
   return response.data;
 };
+
+// =========================
+// HISTORIAL USUARIO
+// =========================
+export const getHistoricoUserRequest = async (id) => {
+  const response = await client.get(
+    `/users/${id}/historico`
+  );
+  return response.data;
+};
