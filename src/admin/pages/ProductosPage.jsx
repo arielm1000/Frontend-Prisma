@@ -343,7 +343,6 @@ function ProductosPage() {
         stockForm.map((stock) =>
           updateStockProductoRequest(productoStock.id, {
             localId: stock.localId,
-            cantidad: Number(stock.cantidad || 0),
             stockMinimo: Number(stock.stockMinimo || 0)
           })
         )
@@ -355,14 +354,14 @@ function ProductosPage() {
       await cargarProductos();
       setSnackbar({
         open: true,
-        message: 'Stock actualizado correctamente',
+        message: 'Stock minimo actualizado correctamente',
         severity: 'success'
       });
     } catch (error) {
       console.log(error);
       setSnackbar({
         open: true,
-        message: 'Error actualizando stock',
+        message: 'Error actualizando stock minimo',
         severity: 'error'
       });
     }
@@ -1086,21 +1085,17 @@ function ProductosPage() {
                 </Typography>
 
                 <TextField
-                  label="Cantidad"
+                  label="Stock actual"
                   type="number"
                   size="small"
                   value={stock.cantidad}
-                  onChange={(e) =>
-                    handleStockChange(
-                      stock.localId,
-                      'cantidad',
-                      e.target.value
-                    )
-                  }
+                  InputProps={{
+                    readOnly: true
+                  }}
                 />
 
                 <TextField
-                  label="Minimo"
+                  label="Stock minimo"
                   type="number"
                   size="small"
                   value={stock.stockMinimo}
@@ -1126,7 +1121,7 @@ function ProductosPage() {
             variant="contained"
             onClick={handleSaveStock}
           >
-            Guardar Stock
+            Guardar Minimos
           </Button>
         </DialogActions>
       </Dialog>

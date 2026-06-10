@@ -70,6 +70,7 @@ function LocalPage() {
   const [form, setForm] = useState({
     empresaId: '',
     nombre: '',
+    nombreCorto: '',
     direccion: '',
     telefono: '',
     provinciaCodigo: '',
@@ -120,6 +121,7 @@ function LocalPage() {
     setForm({
       empresaId: '',
       nombre: '',
+      nombreCorto: '',
       direccion: '',
       telefono: '',
       provinciaCodigo: '',
@@ -139,6 +141,7 @@ function LocalPage() {
     setForm({
       empresaId: '',
       nombre: '',
+      nombreCorto: '',
       direccion: '',
       telefono: '',
       provinciaCodigo: '',
@@ -156,6 +159,7 @@ function LocalPage() {
     setForm({
       empresaId: local.empresaId || local.empresa?.id || '',
       nombre: local.nombre || '',
+      nombreCorto: local.nombreCorto || '',
       direccion: local.direccion || '',
       telefono: local.telefono || '',
       provinciaCodigo: local.provinciaCodigo || local.provincia?.codigo || '',
@@ -343,6 +347,11 @@ function LocalPage() {
       flex: 1
     },
     {
+      field: 'nombreCorto',
+      headerName: 'Corto',
+      width: 100
+    },
+    {
       field: 'empresa',
       headerName: 'Empresa',
       flex: 1,
@@ -470,6 +479,11 @@ function LocalPage() {
       flex: 1
     },
     {
+      field: 'nombreCorto',
+      headerName: 'Corto',
+      width: 100
+    },
+    {
       field: 'puntoVenta',
       headerName: 'PV',
       width: 100
@@ -569,6 +583,18 @@ return (
           margin="normal"
           value={form.nombre}
           onChange={handleChange}
+        />
+
+        <TextField
+          label="Nombre corto"
+          name="nombreCorto"
+          fullWidth
+          margin="normal"
+          value={form.nombreCorto}
+          onChange={handleChange}
+          inputProps={{
+            maxLength: 5
+          }}
         />
 
         <TextField

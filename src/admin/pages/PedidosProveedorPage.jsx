@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -181,6 +181,16 @@ const formatoMoneda = (valor) =>
     style: 'currency',
     currency: 'ARS'
   });
+
+const truncarTexto = (texto = '', largo = 30) => {
+  const limpio = String(texto || '').trim();
+  return limpio.length > largo
+    ? `${limpio.slice(0, largo - 1)}.`
+    : limpio;
+};
+
+const nombreCortoLocal = (local = {}) =>
+  local.nombreCorto || local.nombre || '';
 
 const parseDescuentos = (texto = '') =>
   String(texto)
@@ -1176,7 +1186,7 @@ function PedidosProveedorPage() {
           margenesPrecioPublicoTexto: '',
           precioPublicoAnterior: Number(detalle.producto?.precioPublico || 0),
           precioPublicoNuevo: '',
-          actualizarPrecioPublico: false,
+          actualizarPrecioPublico: true,
           observaciones: ''
         }))
         .filter((detalle) => detalle.pendiente > 0)
@@ -1779,6 +1789,10 @@ function PedidosProveedorPage() {
     <Box>
       <GlobalStyles
         styles={{
+          '@page': {
+            size: 'A4 landscape',
+            margin: '8mm'
+          },
           '@media print': {
             'body *': {
               visibility: 'hidden'
@@ -1791,9 +1805,12 @@ function PedidosProveedorPage() {
               left: 0,
               top: 0,
               width: '100%',
-              padding: '16px'
+              padding: '0'
             },
             '.no-print': {
+              display: 'none !important'
+            },
+            '.MuiDataGrid-selectedRowCount, .MuiDataGrid-footerContainer': {
               display: 'none !important'
             }
           }
@@ -3807,222 +3824,247 @@ function PedidosProveedorPage() {
           Reporte de Control de Recepcion
         </DialogTitle>
         <DialogContent>
-          {recepcionReporte && pedidoDetalle && (
-            <Box id="reporte-recepcion-print" sx={{ p: 1 }}>
-              <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>
-                Reporte de Control de Recepcion
-              </Typography>
+          {recepcionReporte && pedidoDetalle && (() => {
+            const detallesReporte = recepcionReporte.detalles || [];
+            const localesReporte = Array.from(
+              new Map(
+                detallesReporte
+                  .flatMap((detalle) =>
+                    detalle.pedidoProveedorDetalle?.producto?.stocks || []
+                  )
+                  .filter((stock) => stock.local)
+                  .map((stock) => [stock.localId, stock.local])
+              ).values()
+            ).sort((a, b) =>
+              nombreCortoLocal(a).localeCompare(nombreCortoLocal(b), 'es')
+            );
 
-              <Paper
-                variant="outlined"
+            const factura = [
+              recepcionReporte.facturaPuntoVenta ||
+                recepcionReporte.numeroFactura,
+              recepcionReporte.facturaNumero
+            ].filter(Boolean).join('-') || '-';
+
+            return (
+              <Box
+                id="reporte-recepcion-print"
                 sx={{
-                  p: 2,
-                  mb: 2,
-                  display: 'grid',
-                  gridTemplateColumns: {
-                    xs: '1fr',
-                    md: 'repeat(4, 1fr)'
-                  },
-                  gap: 1.5
+                  p: 1,
+                  color: 'text.primary',
+                  fontSize: 11,
+                  '@media print': {
+                    fontSize: 10
+                  }
                 }}
               >
-                <Typography>
-                  Pedido: {pedidoDetalle.numeroPedido}
+                <Typography
+                  sx={{
+                    fontSize: 16,
+                    fontWeight: 700,
+                    mb: 0.75
+                  }}
+                >
+                  Reporte de Control de Recepcion
                 </Typography>
-                <Typography>
-                  Proveedor:{' '}
-                  {pedidoDetalle.proveedor?.nombreComercial || ''}
-                </Typography>
-                <Typography>
-                  Razon social proveedor:{' '}
-                  {recepcionReporte.proveedorRazonSocial?.razonSocial ||
-                    pedidoDetalle.proveedorRazonSocial?.razonSocial ||
-                    'Sin asignar'}
-                </Typography>
-                <Typography>
-                  Empresa facturada:{' '}
-                  {recepcionReporte.empresaFacturacion?.razonSocial ||
-                    pedidoDetalle.empresaFacturacion?.razonSocial ||
-                    'Sin asignar'}
-                </Typography>
-                <Typography>
-                  Local recepcion:{' '}
-                  {pedidoDetalle.localDestino?.nombre || 'Sin asignar'}
-                </Typography>
-                <Typography>
-                  Fecha:{' '}
-                  {formatoFechaNegocio(recepcionReporte.fechaRecepcion)}
-                </Typography>
-                <Typography>
-                  Remito: {recepcionReporte.numeroRemito || '-'}
-                </Typography>
-                <Typography>
-                  Factura:{' '}
-                  {recepcionReporte.facturaPuntoVenta ||
-                    recepcionReporte.numeroFactura ||
-                    '-'}
-                  {recepcionReporte.facturaNumero
-                    ? `-${recepcionReporte.facturaNumero}`
-                    : ''}
-                </Typography>
-                <Typography>
-                  Transporte:{' '}
-                  {pedidoDetalle.transporte?.nombre || 'Sin asignar'}
-                </Typography>
-                <Typography>
-                  Total factura:{' '}
-                  {formatoMoneda(recepcionReporte.totalFacturaProveedor)}
-                </Typography>
-                <Typography>
-                  Total sistema:{' '}
-                  {formatoMoneda(recepcionReporte.totalFacturaSistema)}
-                </Typography>
-                <Typography>
-                  Diferencia:{' '}
-                  {formatoMoneda(recepcionReporte.diferenciaFactura)}
-                </Typography>
-              </Paper>
 
-              <Box sx={{ display: 'grid', gap: 1.5 }}>
-                {(recepcionReporte.detalles || []).map((detalle) => {
-                  const producto =
-                    detalle.pedidoProveedorDetalle?.producto || {};
-                  const cantidadFacturada = Number(
-                    detalle.cantidadFacturada ||
-                      detalle.cantidadRecibida ||
-                      0
-                  );
-                  const cantidadRecibida = Number(
-                    detalle.cantidadRecibida || 0
-                  );
-                  const faltante = Math.max(
-                    cantidadFacturada - cantidadRecibida,
-                    0
-                  );
-                  const sobrante = Math.max(
-                    cantidadRecibida - cantidadFacturada,
-                    0
-                  );
-
-                  return (
-                    <Paper
-                      key={detalle.id}
-                      variant="outlined"
-                      sx={{ p: 2 }}
-                    >
-                      <Typography fontWeight={700} sx={{ mb: 1 }}>
-                        {producto.codigo
-                          ? `${producto.codigo} - ${producto.nombre}`
-                          : producto.nombre}
-                      </Typography>
-                      <Box
-                        sx={{
-                          display: 'grid',
-                          gridTemplateColumns: {
-                            xs: '1fr',
-                            md: 'repeat(6, 1fr)'
-                          },
-                          gap: 1
-                        }}
-                      >
-                        <Typography>
-                          Pedido:{' '}
-                          {detalle.pedidoProveedorDetalle?.cantidadPedida}
-                        </Typography>
-                        <Typography>
-                          Facturado: {cantidadFacturada}
-                        </Typography>
-                        <Typography>
-                          Recibido fisico: {cantidadRecibida}
-                        </Typography>
-                        <Typography>
-                          Faltante: {faltante}
-                        </Typography>
-                        <Typography>
-                          Sobrante: {sobrante}
-                        </Typography>
-                        <Typography>
-                          Rechazado: {detalle.cantidadRechazada}
-                        </Typography>
-                        <Typography>
-                          Lista:{' '}
-                          {formatoMoneda(detalle.precioListaProveedor)}
-                        </Typography>
-                        <Typography>
-                          IVA: {detalle.ivaPorcentaje}%
-                        </Typography>
-                        <Typography>
-                          Publico anterior:{' '}
-                          {formatoMoneda(detalle.precioPublicoAnterior)}
-                        </Typography>
-                        <Typography>
-                          Publico nuevo:{' '}
-                          {formatoMoneda(detalle.precioPublicoNuevo)}
-                        </Typography>
-                        <Typography>
-                          Redondeado:{' '}
-                          {formatoMoneda(detalle.precioPublicoRedondeado)}
-                        </Typography>
-                        <Typography>
-                          Accion excedente: {detalle.accionExcedente}
-                        </Typography>
-                      </Box>
-
-                      <Divider sx={{ my: 1.5 }} />
-                      <Typography variant="body2" fontWeight={700}>
-                        Stock actual por local
-                      </Typography>
-                      <Box
-                        sx={{
-                          display: 'grid',
-                          gridTemplateColumns: {
-                            xs: 'repeat(2, 1fr)',
-                            md: 'repeat(6, 1fr)'
-                          },
-                          gap: 1,
-                          mt: 1
-                        }}
-                      >
-                        {(producto.stocks || []).map((stock) => (
-                          <Typography key={stock.id} variant="body2">
-                            {stock.local?.nombre}: {stock.cantidad}
-                          </Typography>
-                        ))}
-                        {(producto.stocks || []).length === 0 && (
-                          <Typography variant="body2" color="text.secondary">
-                            Sin stock cargado
-                          </Typography>
-                        )}
-                      </Box>
-                    </Paper>
-                  );
-                })}
-              </Box>
-
-              <Paper variant="outlined" sx={{ p: 2, mt: 2 }}>
-                <Typography fontWeight={700} sx={{ mb: 1 }}>
-                  Control deposito central
-                </Typography>
-                <Typography sx={{ mb: 4 }}>
-                  Observaciones:
-                </Typography>
                 <Box
                   sx={{
                     display: 'grid',
-                    gridTemplateColumns: {
-                      xs: '1fr',
-                      md: 'repeat(3, 1fr)'
-                    },
-                    gap: 4
+                    gridTemplateColumns: 'repeat(4, 1fr)',
+                    gap: 0.5,
+                    mb: 1,
+                    '& .MuiTypography-root': {
+                      fontSize: 12,
+                      lineHeight: 1.2
+                    }
                   }}
                 >
-                  <Typography>Controlo: ____________________</Typography>
-                  <Typography>Fecha: ____/____/________</Typography>
-                  <Typography>Firma: ____________________</Typography>
+                  <Typography>Pedido: {pedidoDetalle.numeroPedido}</Typography>
+                  <Typography>
+                    Fecha: {formatoFechaNegocio(recepcionReporte.fechaRecepcion)}
+                  </Typography>
+                  <Typography>Remito: {recepcionReporte.numeroRemito || '-'}</Typography>
+                  <Typography>Factura: {factura}</Typography>
+                  <Typography>
+                    Proveedor: {pedidoDetalle.proveedor?.nombreComercial || ''}
+                  </Typography>
+                  <Typography>
+                    Razon social:{' '}
+                    {recepcionReporte.proveedorRazonSocial?.razonSocial ||
+                      pedidoDetalle.proveedorRazonSocial?.razonSocial ||
+                      'Sin asignar'}
+                  </Typography>
+                  <Typography>
+                    Empresa:{' '}
+                    {recepcionReporte.empresaFacturacion?.razonSocial ||
+                      pedidoDetalle.empresaFacturacion?.razonSocial ||
+                      'Sin asignar'}
+                  </Typography>
+                  <Typography>
+                    Local: {pedidoDetalle.localDestino?.nombre || 'Sin asignar'}
+                  </Typography>
+                  <Typography>
+                    Transporte: {pedidoDetalle.transporte?.nombre || 'Sin asignar'}
+                  </Typography>
+                  <Typography>
+                    Total factura: {formatoMoneda(recepcionReporte.totalFacturaProveedor)}
+                  </Typography>
+                  <Typography>
+                    Total sistema: {formatoMoneda(recepcionReporte.totalFacturaSistema)}
+                  </Typography>
+                  <Typography>
+                    Diferencia: {formatoMoneda(recepcionReporte.diferenciaFactura)}
+                  </Typography>
                 </Box>
-              </Paper>
-            </Box>
-          )}
+
+                <Box
+                  component="table"
+                  sx={{
+                    width: '100%',
+                    borderCollapse: 'collapse',
+                    tableLayout: 'fixed',
+                    '& th, & td': {
+                      border: '1px solid #222',
+                      px: 0.35,
+                      py: 0.25,
+                      lineHeight: 1.15,
+                      verticalAlign: 'middle'
+                    },
+                    '& th': {
+                      bgcolor: '#eeeeee',
+                      fontWeight: 700,
+                      fontSize: 9.5
+                    },
+                    '& td': {
+                      fontSize: 11
+                    }
+                  }}
+                >
+                  <Box component="thead">
+                    <Box component="tr">
+                      <Box component="th" sx={{ width: 72 }}>Cod.</Box>
+                      <Box component="th" sx={{ width: 168 }}>Producto</Box>
+                      <Box component="th" sx={{ width: 34 }}>Ped.</Box>
+                      <Box component="th" sx={{ width: 34 }}>Fact.</Box>
+                      <Box component="th" sx={{ width: 34 }}>Rec.</Box>
+                      <Box component="th" sx={{ width: 34 }}>Falt.</Box>
+                      <Box component="th" sx={{ width: 34 }}>Sob.</Box>
+                      <Box component="th" sx={{ width: 46 }}>P.Pub.</Box>
+                      {localesReporte.map((local) => (
+                        <Box
+                          key={local.id}
+                          component="th"
+                          sx={{ width: 32 }}
+                        >
+                          {nombreCortoLocal(local)}
+                        </Box>
+                      ))}
+                      <Box component="th" sx={{ width: 82 }}>Cod.Barra</Box>
+                    </Box>
+                  </Box>
+                  <Box component="tbody">
+                    {detallesReporte.map((detalle) => {
+                      const producto =
+                        detalle.pedidoProveedorDetalle?.producto || {};
+                      const stocksByLocal = new Map(
+                        (producto.stocks || []).map((stock) => [
+                          stock.localId,
+                          stock
+                        ])
+                      );
+                      const cantidadFacturada = Number(
+                        detalle.cantidadFacturada ||
+                          detalle.cantidadRecibida ||
+                          0
+                      );
+                      const cantidadRecibida = Number(
+                        detalle.cantidadRecibida || 0
+                      );
+                      const faltante = Math.max(
+                        cantidadFacturada - cantidadRecibida,
+                        0
+                      );
+                      const sobrante = Math.max(
+                        cantidadRecibida - cantidadFacturada,
+                        0
+                      );
+
+                      return (
+                        <Fragment key={detalle.id}>
+                          <Box component="tr">
+                            <Box component="td">{producto.codigo || '-'}</Box>
+                            <Box component="td">
+                              {truncarTexto(producto.nombre, 30)}
+                            </Box>
+                            <Box component="td" sx={{ textAlign: 'right' }}>
+                              {detalle.pedidoProveedorDetalle?.cantidadPedida || 0}
+                            </Box>
+                            <Box component="td" sx={{ textAlign: 'right' }}>
+                              {cantidadFacturada}
+                            </Box>
+                            <Box component="td" sx={{ textAlign: 'right' }}>
+                              {cantidadRecibida}
+                            </Box>
+                            <Box component="td" sx={{ textAlign: 'right' }}>
+                              {faltante}
+                            </Box>
+                            <Box component="td" sx={{ textAlign: 'right' }}>
+                              {sobrante}
+                            </Box>
+                            <Box component="td" sx={{ textAlign: 'right' }}>
+                              {Number(detalle.precioPublicoNuevo || 0)
+                                .toLocaleString('es-AR', {
+                                  maximumFractionDigits: 0
+                                })}
+                            </Box>
+                            {localesReporte.map((local) => (
+                              <Box
+                                key={local.id}
+                                component="td"
+                                sx={{ textAlign: 'right' }}
+                              >
+                                {stocksByLocal.get(local.id)?.cantidad ?? 0}
+                              </Box>
+                            ))}
+                            <Box component="td">
+                              {producto.codigoBarra || 'SIN COD.'}
+                            </Box>
+                          </Box>
+                          {detalle.observaciones && (
+                            <Box component="tr" key={`${detalle.id}-obs`}>
+                              <Box
+                                component="td"
+                                colSpan={9 + localesReporte.length}
+                                sx={{ fontStyle: 'italic' }}
+                              >
+                                Obs.: {detalle.observaciones}
+                              </Box>
+                            </Box>
+                          )}
+                        </Fragment>
+                      );
+                    })}
+                  </Box>
+                </Box>
+
+                <Box
+                  sx={{
+                    mt: 1,
+                    display: 'grid',
+                    gridTemplateColumns: '1.2fr 1fr 1fr',
+                    gap: 2,
+                    fontSize: 12,
+                    border: '1px solid #222',
+                    p: 0.75
+                  }}
+                >
+                  <Box>Observaciones:</Box>
+                  <Box>Controlo: ____________________</Box>
+                  <Box>Fecha/Firma: ____/____/________ ____________________</Box>
+                </Box>
+              </Box>
+            );
+          })()}
         </DialogContent>
         <DialogActions className="no-print">
           <Button onClick={cerrarReporteRecepcion}>
