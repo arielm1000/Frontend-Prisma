@@ -1053,7 +1053,13 @@ function PedidosProveedorPage() {
   };
 
   const imprimirReporteRecepcion = () => {
+    const tituloActual = document.title;
+    document.title = 'Reporte de Control de Recepcion';
     window.print();
+
+    setTimeout(() => {
+      document.title = tituloActual;
+    }, 500);
   };
 
   const abrirControlRecepcion = (recepcion) => {
@@ -1796,6 +1802,9 @@ function PedidosProveedorPage() {
           '@media print': {
             'body *': {
               visibility: 'hidden'
+            },
+            'body > *:not(.MuiDialog-root)': {
+              display: 'none !important'
             },
             '#reporte-recepcion-print, #reporte-recepcion-print *': {
               visibility: 'visible'
@@ -3826,7 +3835,7 @@ function PedidosProveedorPage() {
         <DialogContent>
           {recepcionReporte && pedidoDetalle && (() => {
             const detallesReporte = recepcionReporte.detalles || [];
-            const localesReporte = Array.from(
+            const localesDesdeStocks = Array.from(
               new Map(
                 detallesReporte
                   .flatMap((detalle) =>
@@ -3835,6 +3844,10 @@ function PedidosProveedorPage() {
                   .filter((stock) => stock.local)
                   .map((stock) => [stock.localId, stock.local])
               ).values()
+            );
+            const localesReporte = (locales.length > 0
+              ? locales.filter((local) => local.habilitado !== false)
+              : localesDesdeStocks
             ).sort((a, b) =>
               nombreCortoLocal(a).localeCompare(nombreCortoLocal(b), 'es')
             );
@@ -3933,33 +3946,30 @@ function PedidosProveedorPage() {
                     '& th': {
                       bgcolor: '#eeeeee',
                       fontWeight: 700,
-                      fontSize: 9.5
+                      fontSize: 11
                     },
                     '& td': {
-                      fontSize: 11
+                      fontSize: 12
                     }
                   }}
                 >
                   <Box component="thead">
                     <Box component="tr">
                       <Box component="th" sx={{ width: 72 }}>Cod.</Box>
-                      <Box component="th" sx={{ width: 168 }}>Producto</Box>
-                      <Box component="th" sx={{ width: 34 }}>Ped.</Box>
-                      <Box component="th" sx={{ width: 34 }}>Fact.</Box>
-                      <Box component="th" sx={{ width: 34 }}>Rec.</Box>
-                      <Box component="th" sx={{ width: 34 }}>Falt.</Box>
-                      <Box component="th" sx={{ width: 34 }}>Sob.</Box>
-                      <Box component="th" sx={{ width: 46 }}>P.Pub.</Box>
+                      <Box component="th" sx={{ width: 200 }}>Producto</Box>
+                      <Box component="th" sx={{ width: 38 }}>Fact.</Box>
+                      <Box component="th" sx={{ width: 48 }}>Ctrl.</Box>
                       {localesReporte.map((local) => (
                         <Box
                           key={local.id}
                           component="th"
-                          sx={{ width: 32 }}
+                          sx={{ width: 36 }}
                         >
                           {nombreCortoLocal(local)}
                         </Box>
                       ))}
-                      <Box component="th" sx={{ width: 82 }}>Cod.Barra</Box>
+                      <Box component="th" sx={{ width: 58 }}>P.Pub.</Box>
+                      <Box component="th" sx={{ width: 96 }}>Cod.Barra</Box>
                     </Box>
                   </Box>
                   <Box component="tbody">
@@ -3977,17 +3987,6 @@ function PedidosProveedorPage() {
                           detalle.cantidadRecibida ||
                           0
                       );
-                      const cantidadRecibida = Number(
-                        detalle.cantidadRecibida || 0
-                      );
-                      const faltante = Math.max(
-                        cantidadFacturada - cantidadRecibida,
-                        0
-                      );
-                      const sobrante = Math.max(
-                        cantidadRecibida - cantidadFacturada,
-                        0
-                      );
 
                       return (
                         <Fragment key={detalle.id}>
@@ -3997,25 +3996,10 @@ function PedidosProveedorPage() {
                               {truncarTexto(producto.nombre, 30)}
                             </Box>
                             <Box component="td" sx={{ textAlign: 'right' }}>
-                              {detalle.pedidoProveedorDetalle?.cantidadPedida || 0}
-                            </Box>
-                            <Box component="td" sx={{ textAlign: 'right' }}>
                               {cantidadFacturada}
                             </Box>
-                            <Box component="td" sx={{ textAlign: 'right' }}>
-                              {cantidadRecibida}
-                            </Box>
-                            <Box component="td" sx={{ textAlign: 'right' }}>
-                              {faltante}
-                            </Box>
-                            <Box component="td" sx={{ textAlign: 'right' }}>
-                              {sobrante}
-                            </Box>
-                            <Box component="td" sx={{ textAlign: 'right' }}>
-                              {Number(detalle.precioPublicoNuevo || 0)
-                                .toLocaleString('es-AR', {
-                                  maximumFractionDigits: 0
-                                })}
+                            <Box component="td" sx={{ textAlign: 'center' }}>
+                              ______
                             </Box>
                             {localesReporte.map((local) => (
                               <Box
@@ -4026,6 +4010,12 @@ function PedidosProveedorPage() {
                                 {stocksByLocal.get(local.id)?.cantidad ?? 0}
                               </Box>
                             ))}
+                            <Box component="td" sx={{ textAlign: 'right' }}>
+                              {Number(detalle.precioPublicoNuevo || 0)
+                                .toLocaleString('es-AR', {
+                                  maximumFractionDigits: 0
+                                })}
+                            </Box>
                             <Box component="td">
                               {producto.codigoBarra || 'SIN COD.'}
                             </Box>
@@ -4034,7 +4024,7 @@ function PedidosProveedorPage() {
                             <Box component="tr" key={`${detalle.id}-obs`}>
                               <Box
                                 component="td"
-                                colSpan={9 + localesReporte.length}
+                                colSpan={6 + localesReporte.length}
                                 sx={{ fontStyle: 'italic' }}
                               >
                                 Obs.: {detalle.observaciones}
@@ -4053,7 +4043,7 @@ function PedidosProveedorPage() {
                     display: 'grid',
                     gridTemplateColumns: '1.2fr 1fr 1fr',
                     gap: 2,
-                    fontSize: 12,
+                    fontSize: 13,
                     border: '1px solid #222',
                     p: 0.75
                   }}
