@@ -8,6 +8,7 @@ import LoginPage from './auth/pages/LoginPage';
 import HomePage from './admin/pages/HomePage';
 import DashboardLayout from './admin/layouts/DashboardLayout';
 import CuentaCorrienteProveedoresPage from './admin/pages/CuentaCorrienteProveedoresPage';
+import CuentaCorrienteTransportesPage from './admin/pages/CuentaCorrienteTransportesPage';
 import PrivateRoute from './admin/routes/PrivateRoute';
 import UsersPage from './admin/pages/UsersPage';
 import RoleRoute from './admin/routes/RoleRoute';
@@ -220,6 +221,20 @@ function App() {
           }
         />
         <Route
+          path="/admin/cuenta-corriente-transportes"
+          element={
+            <PrivateRoute>
+              <RoleRoute
+                rolesPermitidos={['admin']}
+              >
+                <DashboardLayout>
+                  <CuentaCorrienteTransportesPage />
+                </DashboardLayout>
+              </RoleRoute>
+            </PrivateRoute>
+          }
+        />
+        <Route
           path="/home"
           element={<Navigate to="/admin/home" replace />}
         />
@@ -275,6 +290,12 @@ function App() {
           path="/cuenta-corriente-proveedores"
           element={
             <Navigate to="/admin/cuenta-corriente-proveedores" replace />
+          }
+        />
+        <Route
+          path="/cuenta-corriente-transportes"
+          element={
+            <Navigate to="/admin/cuenta-corriente-transportes" replace />
           }
         />
       </Routes>

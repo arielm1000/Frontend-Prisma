@@ -131,6 +131,11 @@ const menuSections = [
         icon: <PaymentsIcon />
       },
       {
+        label: 'Cta Cte Transportes',
+        path: '/admin/cuenta-corriente-transportes',
+        icon: <LocalShippingIcon />
+      },
+      {
         label: 'Ingreso de Productos',
         path: '/ingreso-productos',
         icon: <MoveToInboxIcon />,

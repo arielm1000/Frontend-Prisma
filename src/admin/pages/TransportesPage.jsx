@@ -55,16 +55,9 @@ const formInicial = {
   provinciaCodigo: '',
   localidadCodigo: '',
   codigoPostal: '',
-  tarifaBase: 0,
   observaciones: '',
   habilitado: true
 };
-
-const formatoMoneda = (valor) =>
-  Number(valor || 0).toLocaleString('es-AR', {
-    style: 'currency',
-    currency: 'ARS'
-  });
 
 function TransportesPage() {
   const [transportes, setTransportes] = useState([]);
@@ -212,7 +205,6 @@ function TransportesPage() {
       provinciaCodigo: transporte.provinciaCodigo || '',
       localidadCodigo: transporte.localidadCodigo || '',
       codigoPostal: transporte.codigoPostal || '',
-      tarifaBase: Number(transporte.tarifaBase || 0),
       observaciones: transporte.observaciones || '',
       habilitado: transporte.habilitado
     });
@@ -324,12 +316,6 @@ function TransportesPage() {
         row.localidad?.nombre || ''
     },
     {
-      field: 'tarifaBase',
-      headerName: 'Tarifa base',
-      width: 140,
-      valueGetter: (_, row) => formatoMoneda(row.tarifaBase)
-    },
-    {
       field: 'habilitado',
       headerName: 'Estado',
       width: 120,
@@ -423,12 +409,6 @@ function TransportesPage() {
       field: 'nombre',
       headerName: 'Transporte',
       flex: 1
-    },
-    {
-      field: 'tarifaBase',
-      headerName: 'Tarifa base',
-      width: 140,
-      valueGetter: (_, row) => formatoMoneda(row.tarifaBase)
     },
     {
       field: 'habilitado',
@@ -613,13 +593,6 @@ function TransportesPage() {
               label="Codigo postal"
               name="codigoPostal"
               value={form.codigoPostal}
-              onChange={handleChange}
-            />
-            <TextField
-              label="Tarifa base"
-              name="tarifaBase"
-              type="number"
-              value={form.tarifaBase}
               onChange={handleChange}
             />
           </Box>
