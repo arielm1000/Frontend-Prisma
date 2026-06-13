@@ -32,3 +32,10 @@ export const anularCuentaCorrienteTransporteMovimientoRequest = async (id) => {
   );
   return data;
 };
+
+export const reactivarCuentaCorrienteTransporteMovimientoRequest = async (id) => {
+  const { data } = await client.patch(
+    `/cuenta-corriente-transportes/${id}/reactivar`
+  );
+  return data;
+};

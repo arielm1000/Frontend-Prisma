@@ -3,6 +3,7 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   Dialog,
   DialogActions,
@@ -11,6 +12,7 @@ import {
   FormControl,
   IconButton,
   InputLabel,
+  ListItemText,
   MenuItem,
   Paper,
   Select,
@@ -31,15 +33,18 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import ReportProblemIcon from '@mui/icons-material/ReportProblem';
+import RestoreIcon from '@mui/icons-material/Restore';
 import { getTransportesRequest } from '../../services/transporte.service';
 import { getProveedoresRequest } from '../../services/proveedor.service';
+import { getEmpresasRequest } from '../../services/empresa.service';
 import { getProvinciasRequest } from '../../services/geografia.service';
 import { getPedidosProveedorRequest } from '../../services/pedidoProveedor.service';
 import {
   anularCuentaCorrienteTransporteMovimientoRequest,
   createCuentaCorrienteTransporteMovimientoRequest,
   getCuentaCorrienteTransporteRequest,
-  getResumenCuentaCorrienteTransporteRequest
+  getResumenCuentaCorrienteTransporteRequest,
+  reactivarCuentaCorrienteTransporteMovimientoRequest
 } from '../../services/cuentaCorrienteTransporte.service';
 import {
   anularGuiaTransporteRequest,
@@ -53,6 +58,15 @@ import {
   getReclamosTransporteRequest,
   resolverReclamoTransporteRequest
 } from '../../services/reclamoTransporte.service';
+import {
+  anularResumenTransporteRequest,
+  createPagoResumenTransporteRequest,
+  confirmarResumenTransporteRequest,
+  createResumenTransporteRequest,
+  getResumenesTransporteRequest,
+  reactivarResumenTransporteRequest,
+  updateResumenTransporteRequest
+} from '../../services/resumenTransporte.service';
 import {
   createTransporteTarifaRequest,
   deleteTransporteTarifaRequest,
@@ -83,6 +97,16 @@ const formatoMoneda = (valor) =>
 
 const redondear = (valor) =>
   Math.round((Number(valor || 0) + Number.EPSILON) * 100) / 100;
+
+const tieneValor = (valor) => valor !== undefined && valor !== null && valor !== '';
+
+const totalPagadoResumen = (resumen) =>
+  (resumen?.pagos || [])
+    .filter((pago) => pago.estado === 'APLICADO')
+    .reduce((total, pago) => total + Number(pago.importeTotal || 0), 0);
+
+const saldoResumen = (resumen) =>
+  redondear(Number(resumen?.totalFacturado || 0) - totalPagadoResumen(resumen));
 
 const tiposOperacion = [
   {
@@ -125,10 +149,16 @@ const guiaInicial = {
   tipoOperacion: 'RECEPCION_COMPRA',
   pedidoProveedorId: '',
   proveedorId: '',
+  empresaId: '',
   provinciaCodigo: '',
   cantidadBultos: '',
   valorDeclarado: '',
   montoEsperado: '',
+  fleteImporte: '',
+  seguroImporte: '',
+  subtotalSinIva: '',
+  ivaImporte: '',
+  totalFacturado: '',
   montoCobrado: '',
   observaciones: ''
 };
@@ -146,12 +176,44 @@ const tarifaInicial = {
 
 const movimientoInicial = {
   transporteId: '',
+  empresaId: '',
   fecha: fechaInputDesdeHoy(),
   tipo: 'PAGO',
   comprobanteTipo: '',
   comprobanteNumero: '',
   importe: '',
   concepto: '',
+  observaciones: ''
+};
+
+const resumenInicial = {
+  transporteId: '',
+  empresaId: '',
+  numeroResumen: '',
+  fechaResumen: fechaInputDesdeHoy(),
+  fechaVencimiento: '',
+  totalFlete: '',
+  totalSeguro: '',
+  totalIva: '',
+  totalFacturado: '',
+  guiaIds: [],
+  observaciones: ''
+};
+
+const detallePagoInicial = {
+  medioPago: 'EFECTIVO',
+  importe: '',
+  banco: '',
+  numeroCheque: '',
+  fechaEmision: fechaInputDesdeHoy(),
+  fechaCobro: fechaInputDesdeHoy(),
+  observaciones: ''
+};
+
+const pagoResumenInicial = {
+  fechaPago: fechaInputDesdeHoy(),
+  importeTotal: '',
+  detalles: [{ ...detallePagoInicial }],
   observaciones: ''
 };
 
@@ -195,9 +257,11 @@ function CuentaCorrienteTransportesPage() {
   const [tab, setTab] = useState(0);
   const [transportes, setTransportes] = useState([]);
   const [proveedores, setProveedores] = useState([]);
+  const [empresas, setEmpresas] = useState([]);
   const [provincias, setProvincias] = useState([]);
   const [pedidos, setPedidos] = useState([]);
   const [guias, setGuias] = useState([]);
+  const [resumenes, setResumenes] = useState([]);
   const [tarifas, setTarifas] = useState([]);
   const [movimientos, setMovimientos] = useState([]);
   const [reclamos, setReclamos] = useState([]);
@@ -219,6 +283,7 @@ function CuentaCorrienteTransportesPage() {
   const [filtros, setFiltros] = useState({
     search: '',
     transporteId: '',
+    empresaId: '',
     tipoOperacion: '',
     estado: ''
   });
@@ -232,6 +297,14 @@ function CuentaCorrienteTransportesPage() {
   const [formTarifa, setFormTarifa] = useState(tarifaInicial);
   const [openMovimiento, setOpenMovimiento] = useState(false);
   const [formMovimiento, setFormMovimiento] = useState(movimientoInicial);
+  const [movimientoAnular, setMovimientoAnular] = useState(null);
+  const [openResumen, setOpenResumen] = useState(false);
+  const [editandoResumen, setEditandoResumen] = useState(false);
+  const [resumenId, setResumenId] = useState(null);
+  const [formResumen, setFormResumen] = useState(resumenInicial);
+  const [openPagoResumen, setOpenPagoResumen] = useState(false);
+  const [resumenPago, setResumenPago] = useState(null);
+  const [formPagoResumen, setFormPagoResumen] = useState(pagoResumenInicial);
   const [openReclamo, setOpenReclamo] = useState(false);
   const [formReclamo, setFormReclamo] = useState(reclamoInicial);
   const [openResolverReclamo, setOpenResolverReclamo] = useState(false);
@@ -249,6 +322,7 @@ function CuentaCorrienteTransportesPage() {
     () => ({
       search: filtros.search,
       transporteId: filtros.transporteId,
+      empresaId: filtros.empresaId,
       tipoOperacion: filtros.tipoOperacion,
       estado: filtros.estado,
       page: paginationGuias.page,
@@ -261,12 +335,13 @@ function CuentaCorrienteTransportesPage() {
     () => ({
       search: filtros.search,
       transporteId: filtros.transporteId,
+      empresaId: filtros.empresaId,
       tipo: '',
       estado: '',
       page: paginationMovimientos.page,
       pageSize: paginationMovimientos.pageSize
     }),
-    [filtros.search, filtros.transporteId, paginationMovimientos]
+    [filtros.search, filtros.transporteId, filtros.empresaId, paginationMovimientos]
   );
 
   const tarifaGuia = useMemo(
@@ -294,16 +369,73 @@ function CuentaCorrienteTransportesPage() {
     const montoEsperado = formGuia.montoEsperado !== ''
       ? Number(formGuia.montoEsperado || 0)
       : montoCalculadoSistema;
-    const diferencia = redondear(Number(formGuia.montoCobrado || 0) - montoEsperado);
+    const totalFacturado = tieneValor(formGuia.totalFacturado)
+      ? Number(formGuia.totalFacturado || 0)
+      : Number(formGuia.montoCobrado || 0);
+    const diferencia = redondear(totalFacturado - montoEsperado);
 
     return {
       porcentaje,
       baseMinima,
       montoCalculadoSistema,
       montoEsperado,
+      totalFacturado,
       diferencia
     };
   }, [formGuia, tarifaGuia]);
+
+  const guiasDisponiblesResumen = useMemo(
+    () =>
+      guias.filter((guia) =>
+        guia.transporteId === Number(formResumen.transporteId) &&
+        guia.empresaId === Number(formResumen.empresaId) &&
+        guia.estado !== 'ANULADA' &&
+        (
+          !(guia.resumenDetalle || []).some((detalle) =>
+            detalle.resumenTransporte?.estado !== 'ANULADO'
+          ) ||
+          formResumen.guiaIds.includes(guia.id)
+        )
+      ),
+    [guias, formResumen]
+  );
+
+  const totalesGuiasResumen = useMemo(
+    () =>
+      guias
+        .filter((guia) => formResumen.guiaIds.includes(guia.id))
+        .reduce(
+          (totales, guia) => ({
+            flete: redondear(totales.flete + Number(guia.fleteImporte || 0)),
+            seguro: redondear(totales.seguro + Number(guia.seguroImporte || 0)),
+            iva: redondear(totales.iva + Number(guia.ivaImporte || 0)),
+            total: redondear(totales.total + Number(guia.totalFacturado || 0))
+          }),
+          {
+            flete: 0,
+            seguro: 0,
+            iva: 0,
+            total: 0
+          }
+        ),
+    [guias, formResumen.guiaIds]
+  );
+
+  const totalMediosPagoResumen = useMemo(
+    () =>
+      redondear(
+        formPagoResumen.detalles.reduce(
+          (total, detalle) => total + Number(detalle.importe || 0),
+          0
+        )
+      ),
+    [formPagoResumen.detalles]
+  );
+
+  const saldoCargaPagoResumen = useMemo(
+    () => redondear(Number(formPagoResumen.importeTotal || 0) - totalMediosPagoResumen),
+    [formPagoResumen.importeTotal, totalMediosPagoResumen]
+  );
 
   const cargarDatos = useCallback(async () => {
     try {
@@ -313,16 +445,24 @@ function CuentaCorrienteTransportesPage() {
         movimientosData,
         resumenData,
         tarifasData,
-        reclamosData
+        reclamosData,
+        resumenesData
       ] = await Promise.all([
         getGuiasTransporteRequest(filtrosGuias),
         getCuentaCorrienteTransporteRequest(filtrosMovimientos),
         getResumenCuentaCorrienteTransporteRequest({
-          transporteId: filtros.transporteId
+          transporteId: filtros.transporteId,
+          empresaId: filtros.empresaId
         }),
         getTransporteTarifasRequest(),
         getReclamosTransporteRequest({
           transporteId: filtros.transporteId,
+          empresaId: filtros.empresaId,
+          search: filtros.search
+        }),
+        getResumenesTransporteRequest({
+          transporteId: filtros.transporteId,
+          empresaId: filtros.empresaId,
           search: filtros.search
         })
       ]);
@@ -337,6 +477,7 @@ function CuentaCorrienteTransportesPage() {
       });
       setTarifas(tarifasData || []);
       setReclamos(reclamosData || []);
+      setResumenes(resumenesData || []);
     } catch (error) {
       console.log(error);
       setSnackbar({
@@ -347,7 +488,13 @@ function CuentaCorrienteTransportesPage() {
     } finally {
       setLoading(false);
     }
-  }, [filtros.search, filtros.transporteId, filtrosGuias, filtrosMovimientos]);
+  }, [
+    filtros.search,
+    filtros.transporteId,
+    filtros.empresaId,
+    filtrosGuias,
+    filtrosMovimientos
+  ]);
 
   useEffect(() => {
     let activo = true;
@@ -357,11 +504,13 @@ function CuentaCorrienteTransportesPage() {
         const [
           transportesData,
           proveedoresData,
+          empresasData,
           provinciasData,
           pedidosData
         ] = await Promise.all([
           getTransportesRequest(),
           getProveedoresRequest(),
+          getEmpresasRequest(),
           getProvinciasRequest(),
           getPedidosProveedorRequest({
             page: 0,
@@ -373,6 +522,7 @@ function CuentaCorrienteTransportesPage() {
 
         setTransportes(transportesData);
         setProveedores(proveedoresData);
+        setEmpresas(empresasData);
         setProvincias(provinciasData);
         setPedidos(pedidosData.data || []);
       } catch (error) {
@@ -407,10 +557,63 @@ function CuentaCorrienteTransportesPage() {
 
   const handleGuia = (event) => {
     const { name, value } = event.target;
-    setFormGuia((actual) => ({
-      ...actual,
-      [name]: value
-    }));
+    setFormGuia((actual) => {
+        const siguiente = {
+          ...actual,
+          [name]: value
+        };
+
+        if (['fleteImporte', 'seguroImporte'].includes(name)) {
+          const subtotal = redondear(
+            Number(siguiente.fleteImporte || 0) +
+              Number(siguiente.seguroImporte || 0)
+          );
+          const iva = redondear(subtotal * 0.21);
+          const total = redondear(subtotal + iva);
+
+          return {
+            ...siguiente,
+            subtotalSinIva: subtotal,
+            ivaImporte: iva,
+            totalFacturado: total,
+            montoCobrado: total
+          };
+        }
+
+        if (name === 'subtotalSinIva') {
+          const subtotal = Number(value || 0);
+          const iva = redondear(subtotal * 0.21);
+          const total = redondear(subtotal + iva);
+
+          return {
+            ...siguiente,
+            ivaImporte: iva,
+            totalFacturado: total,
+            montoCobrado: total
+          };
+        }
+
+        if (name === 'ivaImporte') {
+          const total = redondear(
+            Number(siguiente.subtotalSinIva || 0) + Number(value || 0)
+          );
+
+          return {
+            ...siguiente,
+            totalFacturado: total,
+            montoCobrado: total
+          };
+        }
+
+        if (name === 'totalFacturado') {
+          return {
+            ...siguiente,
+            montoCobrado: value
+          };
+        }
+
+        return siguiente;
+    });
   };
 
   const handleTarifa = (event) => {
@@ -426,6 +629,47 @@ function CuentaCorrienteTransportesPage() {
     setFormMovimiento((actual) => ({
       ...actual,
       [name]: value
+    }));
+  };
+
+  const handleResumen = (event) => {
+    const { name, value } = event.target;
+    setFormResumen((actual) => ({
+      ...actual,
+      [name]: value
+    }));
+  };
+
+  const handleGuiasResumen = (event) => {
+    const value = event.target.value;
+    setFormResumen((actual) => ({
+      ...actual,
+      guiaIds: typeof value === 'string'
+        ? value.split(',').map(Number)
+        : value
+    }));
+  };
+
+  const handlePagoResumen = (event) => {
+    const { name, value } = event.target;
+    setFormPagoResumen((actual) => ({
+      ...actual,
+      [name]: value
+    }));
+  };
+
+  const handleDetallePagoResumen = (index, event) => {
+    const { name, value } = event.target;
+    setFormPagoResumen((actual) => ({
+      ...actual,
+      detalles: actual.detalles.map((detalle, detalleIndex) =>
+        detalleIndex === index
+          ? {
+            ...detalle,
+            [name]: value
+          }
+          : detalle
+      )
     }));
   };
 
@@ -465,10 +709,16 @@ function CuentaCorrienteTransportesPage() {
       tipoOperacion: guia.tipoOperacion || 'RECEPCION_COMPRA',
       pedidoProveedorId: guia.pedidoProveedorId || '',
       proveedorId: guia.proveedorId || '',
+      empresaId: guia.empresaId || '',
       provinciaCodigo: guia.provinciaCodigo || '',
       cantidadBultos: guia.cantidadBultos || '',
       valorDeclarado: guia.valorDeclarado || '',
       montoEsperado: guia.montoEsperado || '',
+      fleteImporte: guia.fleteImporte || '',
+      seguroImporte: guia.seguroImporte || '',
+      subtotalSinIva: guia.subtotalSinIva || '',
+      ivaImporte: guia.ivaImporte || '',
+      totalFacturado: guia.totalFacturado || guia.montoCobrado || '',
       montoCobrado: guia.montoCobrado || '',
       observaciones: guia.observaciones || ''
     });
@@ -625,7 +875,8 @@ function CuentaCorrienteTransportesPage() {
   const abrirNuevoMovimiento = () => {
     setFormMovimiento({
       ...movimientoInicial,
-      transporteId: filtros.transporteId || ''
+      transporteId: filtros.transporteId || '',
+      empresaId: filtros.empresaId || ''
     });
     setOpenMovimiento(true);
   };
@@ -655,9 +906,18 @@ function CuentaCorrienteTransportesPage() {
     }
   };
 
-  const anularMovimiento = async (id) => {
+  const abrirConfirmarAnularMovimiento = (movimiento) => {
+    setMovimientoAnular(movimiento);
+  };
+
+  const cerrarConfirmarAnularMovimiento = () => {
+    setMovimientoAnular(null);
+  };
+
+  const anularMovimiento = async () => {
     try {
-      await anularCuentaCorrienteTransporteMovimientoRequest(id);
+      await anularCuentaCorrienteTransporteMovimientoRequest(movimientoAnular.id);
+      cerrarConfirmarAnularMovimiento();
       await cargarDatos();
       setSnackbar({
         open: true,
@@ -669,6 +929,225 @@ function CuentaCorrienteTransportesPage() {
       setSnackbar({
         open: true,
         message: error.response?.data?.mensaje || 'Error anulando movimiento',
+        severity: 'error'
+      });
+    }
+  };
+
+  const reactivarMovimiento = async (id) => {
+    try {
+      await reactivarCuentaCorrienteTransporteMovimientoRequest(id);
+      await cargarDatos();
+      setSnackbar({
+        open: true,
+        message: 'Movimiento reactivado',
+        severity: 'success'
+      });
+    } catch (error) {
+      console.log(error);
+      setSnackbar({
+        open: true,
+        message: error.response?.data?.mensaje || 'Error reactivando movimiento',
+        severity: 'error'
+      });
+    }
+  };
+
+  const abrirNuevoResumen = () => {
+    setEditandoResumen(false);
+    setResumenId(null);
+    setFormResumen({
+      ...resumenInicial,
+      transporteId: filtros.transporteId || '',
+      empresaId: filtros.empresaId || ''
+    });
+    setOpenResumen(true);
+  };
+
+  const editarResumen = (resumen) => {
+    setEditandoResumen(true);
+    setResumenId(resumen.id);
+    setFormResumen({
+      transporteId: resumen.transporteId || '',
+      empresaId: resumen.empresaId || '',
+      numeroResumen: resumen.numeroResumen || '',
+      fechaResumen: String(resumen.fechaResumen || '').slice(0, 10),
+      fechaVencimiento: resumen.fechaVencimiento
+        ? String(resumen.fechaVencimiento).slice(0, 10)
+        : '',
+      totalFlete: resumen.totalFlete || '',
+      totalSeguro: resumen.totalSeguro || '',
+      totalIva: resumen.totalIva || '',
+      totalFacturado: resumen.totalFacturado || '',
+      guiaIds: (resumen.detalles || []).map((detalle) => detalle.guiaTransporteId),
+      observaciones: resumen.observaciones || ''
+    });
+    setOpenResumen(true);
+  };
+
+  const cerrarResumen = () => {
+    setOpenResumen(false);
+    setEditandoResumen(false);
+    setResumenId(null);
+    setFormResumen(resumenInicial);
+  };
+
+  const guardarResumen = async () => {
+    try {
+      if (editandoResumen) {
+        await updateResumenTransporteRequest(resumenId, formResumen);
+      } else {
+        await createResumenTransporteRequest(formResumen);
+      }
+
+      cerrarResumen();
+      await cargarDatos();
+      setSnackbar({
+        open: true,
+        message: 'Resumen guardado',
+        severity: 'success'
+      });
+    } catch (error) {
+      console.log(error);
+      setSnackbar({
+        open: true,
+        message: error.response?.data?.mensaje || 'Error guardando resumen',
+        severity: 'error'
+      });
+    }
+  };
+
+  const confirmarResumen = async (id) => {
+    try {
+      await confirmarResumenTransporteRequest(id);
+      await cargarDatos();
+      setSnackbar({
+        open: true,
+        message: 'Resumen confirmado',
+        severity: 'success'
+      });
+    } catch (error) {
+      console.log(error);
+      setSnackbar({
+        open: true,
+        message: error.response?.data?.mensaje || 'Error confirmando resumen',
+        severity: 'error'
+      });
+    }
+  };
+
+  const anularResumen = async (id) => {
+    try {
+      await anularResumenTransporteRequest(id);
+      await cargarDatos();
+      setSnackbar({
+        open: true,
+        message: 'Resumen anulado',
+        severity: 'success'
+      });
+    } catch (error) {
+      console.log(error);
+      setSnackbar({
+        open: true,
+        message: error.response?.data?.mensaje || 'Error anulando resumen',
+        severity: 'error'
+      });
+    }
+  };
+
+  const reactivarResumen = async (id) => {
+    try {
+      await reactivarResumenTransporteRequest(id);
+      await cargarDatos();
+      setSnackbar({
+        open: true,
+        message: 'Resumen reactivado',
+        severity: 'success'
+      });
+    } catch (error) {
+      console.log(error);
+      setSnackbar({
+        open: true,
+        message: error.response?.data?.mensaje || 'Error reactivando resumen',
+        severity: 'error'
+      });
+    }
+  };
+
+  const abrirPagoResumen = (resumen) => {
+    const saldo = saldoResumen(resumen);
+    setResumenPago(resumen);
+    setFormPagoResumen({
+      ...pagoResumenInicial,
+      importeTotal: saldo,
+      detalles: [
+        {
+          ...detallePagoInicial,
+          importe: saldo
+        }
+      ]
+    });
+    setOpenPagoResumen(true);
+  };
+
+  const cerrarPagoResumen = () => {
+    setOpenPagoResumen(false);
+    setResumenPago(null);
+    setFormPagoResumen(pagoResumenInicial);
+  };
+
+  const agregarDetallePagoResumen = () => {
+    setFormPagoResumen((actual) => ({
+      ...actual,
+      detalles: [
+        ...actual.detalles,
+        {
+          ...detallePagoInicial,
+          fechaEmision: fechaInputDesdeHoy(),
+          fechaCobro: fechaInputDesdeHoy()
+        }
+      ]
+    }));
+  };
+
+  const quitarDetallePagoResumen = (index) => {
+    setFormPagoResumen((actual) => ({
+      ...actual,
+      detalles: actual.detalles.filter((_, detalleIndex) => detalleIndex !== index)
+    }));
+  };
+
+  const guardarPagoResumen = async () => {
+    try {
+      const detalleFechaInvalida = formPagoResumen.detalles.find((detalle) =>
+        ['CHEQUE', 'ECHEQ'].includes(detalle.medioPago) &&
+        detalle.fechaEmision &&
+        detalle.fechaCobro &&
+        detalle.fechaEmision > detalle.fechaCobro
+      );
+
+      if (detalleFechaInvalida) {
+        setSnackbar({
+          open: true,
+          message: 'La fecha de emision debe ser menor o igual a la fecha de cobro',
+          severity: 'error'
+        });
+        return;
+      }
+
+      await createPagoResumenTransporteRequest(resumenPago.id, formPagoResumen);
+      cerrarPagoResumen();
+      await cargarDatos();
+      setSnackbar({
+        open: true,
+        message: 'Pago de resumen aplicado',
+        severity: 'success'
+      });
+    } catch (error) {
+      console.log(error);
+      setSnackbar({
+        open: true,
+        message: error.response?.data?.mensaje || 'Error aplicando pago',
         severity: 'error'
       });
     }
@@ -756,7 +1235,7 @@ function CuentaCorrienteTransportesPage() {
     },
     {
       field: 'numeroGuia',
-      headerName: 'Guia',
+      headerName: 'Guia factura',
       width: 145
     },
     {
@@ -777,6 +1256,13 @@ function CuentaCorrienteTransportesPage() {
       minWidth: 170,
       flex: 1,
       valueGetter: (_, row) => row.proveedor?.nombreComercial || ''
+    },
+    {
+      field: 'empresa',
+      headerName: 'Empresa',
+      minWidth: 180,
+      flex: 1,
+      valueGetter: (_, row) => row.empresa?.razonSocial || ''
     },
     {
       field: 'provincia',
@@ -809,7 +1295,7 @@ function CuentaCorrienteTransportesPage() {
     },
     {
       field: 'montoCobrado',
-      headerName: 'Cobrado',
+      headerName: 'Total fact.',
       width: 125,
       valueGetter: (_, row) => formatoMoneda(row.montoCobrado)
     },
@@ -985,6 +1471,13 @@ function CuentaCorrienteTransportesPage() {
       valueGetter: (_, row) => row.transporte?.nombre || ''
     },
     {
+      field: 'empresa',
+      headerName: 'Empresa',
+      flex: 1,
+      minWidth: 180,
+      valueGetter: (_, row) => row.empresa?.razonSocial || ''
+    },
+    {
       field: 'tipo',
       headerName: 'Tipo',
       width: 170
@@ -1027,24 +1520,199 @@ function CuentaCorrienteTransportesPage() {
     {
       field: 'acciones',
       headerName: '',
-      width: 80,
+      width: 90,
+      sortable: false,
+      filterable: false,
+      renderCell: (params) => {
+        if (params.row.estado === 'ANULADO') {
+          return (
+            <Tooltip title="Reactivar">
+              <span>
+                <IconButton
+                  color="success"
+                  disabled={params.row.origen === 'AUTO'}
+                  onClick={() => reactivarMovimiento(params.row.id)}
+                >
+                  <RestoreIcon />
+                </IconButton>
+              </span>
+            </Tooltip>
+          );
+        }
+
+        return (
+          <Tooltip title="Anular">
+            <span>
+              <IconButton
+                color="error"
+                disabled={params.row.origen === 'AUTO'}
+                onClick={() => abrirConfirmarAnularMovimiento(params.row)}
+              >
+                <CancelIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
+        );
+      }
+    }
+  ];
+
+  const resumenColumns = [
+    {
+      field: 'fechaResumen',
+      headerName: 'Fecha',
+      width: 115,
+      valueGetter: (_, row) => formatoFecha(row.fechaResumen)
+    },
+    {
+      field: 'numeroResumen',
+      headerName: 'Resumen',
+      width: 150
+    },
+    {
+      field: 'transporte',
+      headerName: 'Transporte',
+      minWidth: 170,
+      flex: 1,
+      valueGetter: (_, row) => row.transporte?.nombre || ''
+    },
+    {
+      field: 'empresa',
+      headerName: 'Empresa',
+      minWidth: 190,
+      flex: 1,
+      valueGetter: (_, row) => row.empresa?.razonSocial || ''
+    },
+    {
+      field: 'guias',
+      headerName: 'Guias',
+      width: 85,
+      valueGetter: (_, row) => row.detalles?.length || 0
+    },
+    {
+      field: 'totalFlete',
+      headerName: 'Flete',
+      width: 120,
+      valueGetter: (_, row) => formatoMoneda(row.totalFlete)
+    },
+    {
+      field: 'totalSeguro',
+      headerName: 'Seguro',
+      width: 120,
+      valueGetter: (_, row) => formatoMoneda(row.totalSeguro)
+    },
+    {
+      field: 'totalIva',
+      headerName: 'IVA',
+      width: 120,
+      valueGetter: (_, row) => formatoMoneda(row.totalIva)
+    },
+    {
+      field: 'totalFacturado',
+      headerName: 'Total',
+      width: 125,
+      valueGetter: (_, row) => formatoMoneda(row.totalFacturado)
+    },
+    {
+      field: 'pagado',
+      headerName: 'Pagado',
+      width: 125,
+      valueGetter: (_, row) => formatoMoneda(totalPagadoResumen(row))
+    },
+    {
+      field: 'saldo',
+      headerName: 'Saldo',
+      width: 125,
+      valueGetter: (_, row) => formatoMoneda(saldoResumen(row))
+    },
+    {
+      field: 'diferenciaTotal',
+      headerName: 'Dif.',
+      width: 110,
+      valueGetter: (_, row) => formatoMoneda(row.diferenciaTotal)
+    },
+    {
+      field: 'estado',
+      headerName: 'Estado',
+      width: 125,
+      renderCell: (params) => (
+        <Chip
+          label={params.row.estado}
+          color={params.row.estado === 'ANULADO' ? 'error' : 'success'}
+          size="small"
+        />
+      )
+    },
+    {
+      field: 'acciones',
+      headerName: '',
+      width: 180,
       sortable: false,
       filterable: false,
       renderCell: (params) => (
-        <Tooltip title="Anular">
-          <span>
-            <IconButton
-              color="error"
-              disabled={
-                params.row.origen === 'AUTO' ||
-                params.row.estado === 'ANULADO'
-              }
-              onClick={() => anularMovimiento(params.row.id)}
-            >
-              <CancelIcon />
-            </IconButton>
-          </span>
-        </Tooltip>
+        <Box display="flex" gap={0.5}>
+          {params.row.estado === 'ANULADO' ? (
+            <Tooltip title="Reactivar">
+              <span>
+                <IconButton
+                  color="success"
+                  onClick={() => reactivarResumen(params.row.id)}
+                >
+                  <RestoreIcon />
+                </IconButton>
+              </span>
+            </Tooltip>
+          ) : (
+            <>
+              <Tooltip title="Editar">
+                <span>
+                  <IconButton
+                    color="primary"
+                    disabled={params.row.estado !== 'BORRADOR'}
+                    onClick={() => editarResumen(params.row)}
+                  >
+                    <EditIcon />
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Tooltip title="Confirmar">
+                <span>
+                  <IconButton
+                    color="success"
+                    disabled={params.row.estado !== 'BORRADOR'}
+                    onClick={() => confirmarResumen(params.row.id)}
+                  >
+                    <CheckCircleIcon />
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Tooltip title="Anular">
+                <span>
+                  <IconButton
+                    color="error"
+                    onClick={() => anularResumen(params.row.id)}
+                  >
+                    <CancelIcon />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            </>
+          )}
+          <Tooltip title="Pagar resumen">
+            <span>
+              <IconButton
+                color="primary"
+                disabled={
+                  !['CONFIRMADO', 'PAGADO_PARCIAL'].includes(params.row.estado) ||
+                  saldoResumen(params.row) <= 0
+                }
+                onClick={() => abrirPagoResumen(params.row)}
+              >
+                <AddIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Box>
       )
     }
   ];
@@ -1135,18 +1803,21 @@ function CuentaCorrienteTransportesPage() {
             Cuenta Corriente Transportes
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Guias, tarifas, pagos, notas de credito y trazabilidad.
+            Guias factura, tarifas, pagos, notas de credito y trazabilidad.
           </Typography>
         </Box>
         <Box display="flex" gap={1}>
           <Button variant="outlined" startIcon={<AddIcon />} onClick={abrirNuevaTarifa}>
             Tarifa
           </Button>
+          <Button variant="outlined" startIcon={<AddIcon />} onClick={abrirNuevoResumen}>
+            Resumen
+          </Button>
           <Button variant="outlined" startIcon={<AddIcon />} onClick={abrirNuevoMovimiento}>
             Movimiento
           </Button>
           <Button variant="contained" startIcon={<AddIcon />} onClick={abrirNuevaGuia}>
-            Guia
+            Guia factura
           </Button>
         </Box>
       </Box>
@@ -1184,7 +1855,7 @@ function CuentaCorrienteTransportesPage() {
         </Paper>
         <Paper sx={{ p: 2 }}>
           <Typography variant="body2" color="text.secondary">
-            Guias
+            Guias factura
           </Typography>
           <Typography variant="h5" fontWeight={700}>
             {totalGuias}
@@ -1198,7 +1869,7 @@ function CuentaCorrienteTransportesPage() {
             display: 'grid',
             gridTemplateColumns: {
               xs: '1fr',
-              md: '1.4fr 1fr 1fr 1fr'
+              md: '1.4fr 1fr 1fr 1fr 1fr'
             },
             gap: 2
           }}
@@ -1222,6 +1893,23 @@ function CuentaCorrienteTransportesPage() {
               {transportes.map((transporte) => (
                 <MenuItem key={transporte.id} value={transporte.id}>
                   {transporte.nombre}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControl>
+            <InputLabel>Empresa</InputLabel>
+            <Select
+              label="Empresa"
+              name="empresaId"
+              value={filtros.empresaId}
+              onChange={handleFiltro}
+            >
+              <MenuItem value="">Todas</MenuItem>
+              {empresas.map((empresa) => (
+                <MenuItem key={empresa.id} value={empresa.id}>
+                  {empresa.razonSocial}
                 </MenuItem>
               ))}
             </Select>
@@ -1264,7 +1952,8 @@ function CuentaCorrienteTransportesPage() {
 
       <Paper sx={{ mb: 2 }}>
         <Tabs value={tab} onChange={(_, value) => setTab(value)}>
-          <Tab label="Guias" />
+          <Tab label="Guias factura" />
+          <Tab label="Resumenes" />
           <Tab label="Cuenta corriente" />
           <Tab label="Reclamos" />
           <Tab label="Tarifas" />
@@ -1291,6 +1980,19 @@ function CuentaCorrienteTransportesPage() {
       {tab === 1 && (
         <Paper sx={{ height: 610 }}>
           <DataGrid
+            rows={resumenes}
+            columns={resumenColumns}
+            loading={loading}
+            pageSizeOptions={[25, 50, 100]}
+            slots={{ toolbar: GridToolbar }}
+            disableRowSelectionOnClick
+          />
+        </Paper>
+      )}
+
+      {tab === 2 && (
+        <Paper sx={{ height: 610 }}>
+          <DataGrid
             rows={movimientos}
             columns={movimientoColumns}
             loading={loading}
@@ -1305,7 +2007,7 @@ function CuentaCorrienteTransportesPage() {
         </Paper>
       )}
 
-      {tab === 2 && (
+      {tab === 3 && (
         <Paper sx={{ height: 610 }}>
           <DataGrid
             rows={reclamos}
@@ -1318,7 +2020,7 @@ function CuentaCorrienteTransportesPage() {
         </Paper>
       )}
 
-      {tab === 3 && (
+      {tab === 4 && (
         <Paper sx={{ height: 610 }}>
           <DataGrid
             rows={tarifas}
@@ -1331,11 +2033,344 @@ function CuentaCorrienteTransportesPage() {
         </Paper>
       )}
 
-      <Dialog open={openGuia} onClose={cerrarGuia} fullWidth maxWidth="md">
-        <DialogTitle>{editandoGuia ? 'Editar guia' : 'Nueva guia'}</DialogTitle>
+      <Dialog open={openResumen} onClose={cerrarResumen} fullWidth maxWidth="lg">
+        <DialogTitle>
+          {editandoResumen ? 'Editar resumen transporte' : 'Nuevo resumen transporte'}
+        </DialogTitle>
         <DialogContent>
           <Alert severity="info" sx={{ mb: 2 }}>
-            Al confirmar una guia se genera automaticamente el debe en la
+            El resumen agrupa guias factura ya cargadas. No genera deuda nueva:
+            la cuenta corriente sigue naciendo desde cada guia factura.
+          </Alert>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: {
+                xs: '1fr',
+                md: '1fr 1fr 1fr'
+              },
+              gap: 2,
+              mt: 1
+            }}
+          >
+            <FormControl>
+              <InputLabel>Transporte</InputLabel>
+              <Select
+                label="Transporte"
+                name="transporteId"
+                value={formResumen.transporteId}
+                onChange={handleResumen}
+              >
+                {transportes.map((transporte) => (
+                  <MenuItem key={transporte.id} value={transporte.id}>
+                    {transporte.nombre}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <FormControl>
+              <InputLabel>Empresa</InputLabel>
+              <Select
+                label="Empresa"
+                name="empresaId"
+                value={formResumen.empresaId}
+                onChange={handleResumen}
+              >
+                {empresas.map((empresa) => (
+                  <MenuItem key={empresa.id} value={empresa.id}>
+                    {empresa.razonSocial}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <TextField
+              label="Nro. resumen"
+              name="numeroResumen"
+              value={formResumen.numeroResumen}
+              onChange={handleResumen}
+            />
+
+            <TextField
+              label="Fecha resumen"
+              name="fechaResumen"
+              type="date"
+              value={formResumen.fechaResumen}
+              onChange={handleResumen}
+              InputLabelProps={{ shrink: true }}
+            />
+
+            <TextField
+              label="Fecha vencimiento"
+              name="fechaVencimiento"
+              type="date"
+              value={formResumen.fechaVencimiento}
+              onChange={handleResumen}
+              InputLabelProps={{ shrink: true }}
+            />
+
+            <FormControl
+              sx={{
+                gridColumn: {
+                  md: '1 / -1'
+                }
+              }}
+            >
+              <InputLabel>Guias factura</InputLabel>
+              <Select
+                multiple
+                label="Guias factura"
+                name="guiaIds"
+                value={formResumen.guiaIds}
+                onChange={handleGuiasResumen}
+                renderValue={(selected) =>
+                  selected
+                    .map((id) =>
+                      guias.find((guia) => guia.id === id)?.numeroGuia
+                    )
+                    .filter(Boolean)
+                    .join(', ')
+                }
+              >
+                {guiasDisponiblesResumen.map((guia) => (
+                  <MenuItem key={guia.id} value={guia.id}>
+                    <Checkbox checked={formResumen.guiaIds.includes(guia.id)} />
+                    <ListItemText
+                      primary={`${guia.numeroGuia} - ${formatoMoneda(guia.totalFacturado)}`}
+                      secondary={`${formatoFecha(guia.fechaGuia)} - ${guia.proveedor?.nombreComercial || ''}`}
+                    />
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <TextField
+              label="Total flete resumen"
+              name="totalFlete"
+              type="number"
+              value={formResumen.totalFlete}
+              onChange={handleResumen}
+              helperText={`Guias: ${formatoMoneda(totalesGuiasResumen.flete)}`}
+            />
+
+            <TextField
+              label="Total seguro resumen"
+              name="totalSeguro"
+              type="number"
+              value={formResumen.totalSeguro}
+              onChange={handleResumen}
+              helperText={`Guias: ${formatoMoneda(totalesGuiasResumen.seguro)}`}
+            />
+
+            <TextField
+              label="Total IVA resumen"
+              name="totalIva"
+              type="number"
+              value={formResumen.totalIva}
+              onChange={handleResumen}
+              helperText={`Guias: ${formatoMoneda(totalesGuiasResumen.iva)}`}
+            />
+
+            <TextField
+              label="Total facturado resumen"
+              name="totalFacturado"
+              type="number"
+              value={formResumen.totalFacturado}
+              onChange={handleResumen}
+              helperText={`Guias: ${formatoMoneda(totalesGuiasResumen.total)}`}
+            />
+
+            <TextField
+              label="Diferencia total"
+              value={formatoMoneda(
+                Number(formResumen.totalFacturado || 0) - totalesGuiasResumen.total
+              )}
+              InputProps={{
+                readOnly: true
+              }}
+            />
+
+            <TextField
+              label="Observaciones"
+              name="observaciones"
+              value={formResumen.observaciones}
+              onChange={handleResumen}
+              multiline
+              rows={2}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={cerrarResumen}>Cancelar</Button>
+          <Button variant="contained" onClick={guardarResumen}>
+            Guardar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={openPagoResumen} onClose={cerrarPagoResumen} fullWidth maxWidth="lg">
+        <DialogTitle>Pagar resumen transporte</DialogTitle>
+        <DialogContent>
+          {resumenPago && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Resumen {resumenPago.numeroResumen} - Total{' '}
+              {formatoMoneda(resumenPago.totalFacturado)} - Pagado{' '}
+              {formatoMoneda(totalPagadoResumen(resumenPago))} - Saldo{' '}
+              {formatoMoneda(saldoResumen(resumenPago))}
+            </Alert>
+          )}
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: {
+                xs: '1fr',
+                md: '1fr 1fr'
+              },
+              gap: 2,
+              mt: 1
+            }}
+          >
+            <TextField
+              label="Fecha pago"
+              name="fechaPago"
+              type="date"
+              value={formPagoResumen.fechaPago}
+              onChange={handlePagoResumen}
+              InputLabelProps={{ shrink: true }}
+            />
+
+            <TextField
+              label="Importe total"
+              name="importeTotal"
+              type="number"
+              value={formPagoResumen.importeTotal}
+              onChange={handlePagoResumen}
+              helperText={`Medios: ${formatoMoneda(totalMediosPagoResumen)} | Saldo: ${formatoMoneda(saldoCargaPagoResumen)}`}
+            />
+
+            <TextField
+              label="Observaciones"
+              name="observaciones"
+              value={formPagoResumen.observaciones}
+              onChange={handlePagoResumen}
+              multiline
+              rows={2}
+              sx={{
+                gridColumn: {
+                  md: '1 / -1'
+                }
+              }}
+            />
+          </Box>
+
+          <Box sx={{ mt: 2, display: 'grid', gap: 2 }}>
+            {formPagoResumen.detalles.map((detalle, index) => (
+              <Paper key={index} variant="outlined" sx={{ p: 2 }}>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: {
+                      xs: '1fr',
+                      md: '1fr 1fr 1fr'
+                    },
+                    gap: 2,
+                    alignItems: 'start'
+                  }}
+                >
+                  <TextField
+                    select
+                    label="Medio"
+                    name="medioPago"
+                    value={detalle.medioPago}
+                    onChange={(event) => handleDetallePagoResumen(index, event)}
+                  >
+                    <MenuItem value="EFECTIVO">Efectivo</MenuItem>
+                    <MenuItem value="CHEQUE">Cheque</MenuItem>
+                    <MenuItem value="ECHEQ">eCheq</MenuItem>
+                    <MenuItem value="TRANSFERENCIA">Transferencia</MenuItem>
+                  </TextField>
+
+                  <TextField
+                    label="Importe"
+                    name="importe"
+                    type="number"
+                    value={detalle.importe}
+                    onChange={(event) => handleDetallePagoResumen(index, event)}
+                  />
+
+                  <TextField
+                    label="Banco"
+                    name="banco"
+                    value={detalle.banco}
+                    onChange={(event) => handleDetallePagoResumen(index, event)}
+                    disabled={!['CHEQUE', 'ECHEQ'].includes(detalle.medioPago)}
+                  />
+
+                  <TextField
+                    label="Numero cheque/eCheq"
+                    name="numeroCheque"
+                    value={detalle.numeroCheque}
+                    onChange={(event) => handleDetallePagoResumen(index, event)}
+                    disabled={!['CHEQUE', 'ECHEQ'].includes(detalle.medioPago)}
+                  />
+
+                  <TextField
+                    label="Fecha emision"
+                    name="fechaEmision"
+                    type="date"
+                    value={detalle.fechaEmision}
+                    onChange={(event) => handleDetallePagoResumen(index, event)}
+                    InputLabelProps={{ shrink: true }}
+                    disabled={!['CHEQUE', 'ECHEQ'].includes(detalle.medioPago)}
+                  />
+
+                  <TextField
+                    label="Fecha cobro"
+                    name="fechaCobro"
+                    type="date"
+                    value={detalle.fechaCobro}
+                    onChange={(event) => handleDetallePagoResumen(index, event)}
+                    InputLabelProps={{ shrink: true }}
+                    disabled={!['CHEQUE', 'ECHEQ'].includes(detalle.medioPago)}
+                  />
+
+                  <Box display="flex" alignItems="center">
+                    <Button
+                      color="error"
+                      startIcon={<DeleteIcon />}
+                      disabled={formPagoResumen.detalles.length === 1}
+                      onClick={() => quitarDetallePagoResumen(index)}
+                    >
+                      Quitar
+                    </Button>
+                  </Box>
+                </Box>
+              </Paper>
+            ))}
+          </Box>
+
+          <Box sx={{ mt: 2 }}>
+            <Button variant="outlined" startIcon={<AddIcon />} onClick={agregarDetallePagoResumen}>
+              Medio de pago
+            </Button>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={cerrarPagoResumen}>Cancelar</Button>
+          <Button variant="contained" onClick={guardarPagoResumen}>
+            Aplicar pago
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={openGuia} onClose={cerrarGuia} fullWidth maxWidth="md">
+        <DialogTitle>
+          {editandoGuia ? 'Editar guia factura' : 'Nueva guia factura'}
+        </DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Al confirmar una guia factura se genera automaticamente el debe en la
             cuenta corriente del transporte.
           </Alert>
           <Box
@@ -1366,14 +2401,14 @@ function CuentaCorrienteTransportesPage() {
             </FormControl>
 
             <TextField
-              label="Numero guia"
+              label="Nro. guia factura"
               name="numeroGuia"
               value={formGuia.numeroGuia}
               onChange={handleGuia}
             />
 
             <TextField
-              label="Fecha guia"
+              label="Fecha guia factura"
               name="fechaGuia"
               type="date"
               value={formGuia.fechaGuia}
@@ -1424,6 +2459,23 @@ function CuentaCorrienteTransportesPage() {
                 {proveedores.map((proveedor) => (
                   <MenuItem key={proveedor.id} value={proveedor.id}>
                     {proveedor.nombreComercial}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <FormControl>
+              <InputLabel>Empresa facturada</InputLabel>
+              <Select
+                label="Empresa facturada"
+                name="empresaId"
+                value={formGuia.empresaId}
+                onChange={handleGuia}
+              >
+                <MenuItem value="">Sin empresa</MenuItem>
+                {empresas.map((empresa) => (
+                  <MenuItem key={empresa.id} value={empresa.id}>
+                    {empresa.razonSocial}
                   </MenuItem>
                 ))}
               </Select>
@@ -1482,11 +2534,46 @@ function CuentaCorrienteTransportesPage() {
             />
 
             <TextField
-              label="Monto cobrado"
-              name="montoCobrado"
+              label="Flete"
+              name="fleteImporte"
               type="number"
-              value={formGuia.montoCobrado}
+              value={formGuia.fleteImporte}
               onChange={handleGuia}
+            />
+
+            <TextField
+              label="Seguro"
+              name="seguroImporte"
+              type="number"
+              value={formGuia.seguroImporte}
+              onChange={handleGuia}
+            />
+
+            <TextField
+              label="Subtotal sin IVA"
+              name="subtotalSinIva"
+              type="number"
+              value={formGuia.subtotalSinIva}
+              onChange={handleGuia}
+              helperText="Flete + seguro. Editable por redondeos"
+            />
+
+            <TextField
+              label="IVA 21%"
+              name="ivaImporte"
+              type="number"
+              value={formGuia.ivaImporte}
+              onChange={handleGuia}
+              helperText="Calculado automaticamente, editable"
+            />
+
+            <TextField
+              label="Total facturado"
+              name="totalFacturado"
+              type="number"
+              value={formGuia.totalFacturado}
+              onChange={handleGuia}
+              helperText="Este total impacta en la cuenta corriente"
             />
 
             <TextField
@@ -1658,6 +2745,23 @@ function CuentaCorrienteTransportesPage() {
                 {transportes.map((transporte) => (
                   <MenuItem key={transporte.id} value={transporte.id}>
                     {transporte.nombre}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <FormControl>
+              <InputLabel>Empresa</InputLabel>
+              <Select
+                label="Empresa"
+                name="empresaId"
+                value={formMovimiento.empresaId}
+                onChange={handleMovimiento}
+              >
+                <MenuItem value="">Sin empresa</MenuItem>
+                {empresas.map((empresa) => (
+                  <MenuItem key={empresa.id} value={empresa.id}>
+                    {empresa.razonSocial}
                   </MenuItem>
                 ))}
               </Select>
@@ -1907,6 +3011,43 @@ function CuentaCorrienteTransportesPage() {
           <Button onClick={cerrarResolverReclamo}>Cancelar</Button>
           <Button variant="contained" onClick={resolverReclamo}>
             Resolver
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(movimientoAnular)}
+        onClose={cerrarConfirmarAnularMovimiento}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>Anular movimiento</DialogTitle>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Esta accion quita el movimiento de la cuenta corriente. Luego podra
+            reactivarse desde la misma grilla.
+          </Alert>
+          {movimientoAnular && (
+            <Box>
+              <Typography variant="body2">
+                {movimientoAnular.concepto || movimientoAnular.tipo}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Debe {formatoMoneda(movimientoAnular.debe)} - Haber{' '}
+                {formatoMoneda(movimientoAnular.haber)}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {[movimientoAnular.comprobanteTipo, movimientoAnular.comprobanteNumero]
+                  .filter(Boolean)
+                  .join(' ')}
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={cerrarConfirmarAnularMovimiento}>Cancelar</Button>
+          <Button color="error" variant="contained" onClick={anularMovimiento}>
+            Anular movimiento
           </Button>
         </DialogActions>
       </Dialog>
