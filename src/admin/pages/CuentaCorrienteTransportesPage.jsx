@@ -178,7 +178,7 @@ const movimientoInicial = {
   transporteId: '',
   empresaId: '',
   fecha: fechaInputDesdeHoy(),
-  tipo: 'PAGO',
+  tipo: 'NOTA_CREDITO',
   comprobanteTipo: '',
   comprobanteNumero: '',
   importe: '',
@@ -893,14 +893,14 @@ function CuentaCorrienteTransportesPage() {
       await cargarDatos();
       setSnackbar({
         open: true,
-        message: 'Movimiento cargado',
+        message: 'Ajuste cargado',
         severity: 'success'
       });
     } catch (error) {
       console.log(error);
       setSnackbar({
         open: true,
-        message: error.response?.data?.mensaje || 'Error cargando movimiento',
+        message: error.response?.data?.mensaje || 'Error cargando ajuste',
         severity: 'error'
       });
     }
@@ -1814,7 +1814,7 @@ function CuentaCorrienteTransportesPage() {
             Resumen
           </Button>
           <Button variant="outlined" startIcon={<AddIcon />} onClick={abrirNuevoMovimiento}>
-            Movimiento
+            Ajuste
           </Button>
           <Button variant="contained" startIcon={<AddIcon />} onClick={abrirNuevaGuia}>
             Guia factura
@@ -2717,11 +2717,11 @@ function CuentaCorrienteTransportesPage() {
         fullWidth
         maxWidth="md"
       >
-        <DialogTitle>Nuevo movimiento transporte</DialogTitle>
+        <DialogTitle>Nuevo ajuste transporte</DialogTitle>
         <DialogContent>
           <Alert severity="info" sx={{ mb: 2 }}>
-            Las guias confirmadas generan deuda automaticamente. Use este
-            formulario para pagos, notas de credito y ajustes manuales.
+            Use este formulario solo para notas de credito o ajustes manuales
+            fuera del pago de resumen.
           </Alert>
           <Box
             sx={{
@@ -2783,7 +2783,6 @@ function CuentaCorrienteTransportesPage() {
               value={formMovimiento.tipo}
               onChange={handleMovimiento}
             >
-              <MenuItem value="PAGO">Pago</MenuItem>
               <MenuItem value="NOTA_CREDITO">Nota de credito</MenuItem>
               <MenuItem value="AJUSTE_DEBITO">Ajuste debito</MenuItem>
               <MenuItem value="AJUSTE_CREDITO">Ajuste credito</MenuItem>
