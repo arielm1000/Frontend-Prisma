@@ -23,6 +23,17 @@ export const aprobarControlRecepcionPedidoProveedorRequest = async (
   return data;
 };
 
+export const ajustarControlPosteriorRecepcionRequest = async (
+  id,
+  ajuste = {}
+) => {
+  const { data } = await client.patch(
+    `/recepciones-pedidos-proveedor/${id}/ajuste-posterior`,
+    ajuste
+  );
+  return data;
+};
+
 export const resolverGestionAdministrativaRecepcionRequest = async (
   id,
   gestion

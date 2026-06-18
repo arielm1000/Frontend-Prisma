@@ -25,9 +25,11 @@ import {
 } from '@mui/x-data-grid';
 import AddIcon from '@mui/icons-material/Add';
 import CancelIcon from '@mui/icons-material/Cancel';
+import EditIcon from '@mui/icons-material/Edit';
 import { getProveedoresRequest } from '../../services/proveedor.service';
 import {
   anularCuentaCorrienteProveedorMovimientoRequest,
+  completarNotaCreditoProveedorRequest,
   createCuentaCorrienteProveedorMovimientoRequest,
   getCuentaCorrienteProveedorRequest,
   getResumenCuentaCorrienteProveedorRequest
@@ -67,6 +69,13 @@ const movimientoInicial = {
   observaciones: ''
 };
 
+const comprobanteNotaCreditoInicial = {
+  puntoVenta: '',
+  numero: '',
+  fecha: fechaInputDesdeHoy(),
+  observaciones: ''
+};
+
 function CuentaCorrienteProveedoresPage() {
   const [movimientos, setMovimientos] = useState([]);
   const [proveedores, setProveedores] = useState([]);
@@ -88,6 +97,11 @@ function CuentaCorrienteProveedoresPage() {
   });
   const [openMovimiento, setOpenMovimiento] = useState(false);
   const [formMovimiento, setFormMovimiento] = useState(movimientoInicial);
+  const [openComprobanteNC, setOpenComprobanteNC] = useState(false);
+  const [movimientoComprobanteNC, setMovimientoComprobanteNC] = useState(null);
+  const [formComprobanteNC, setFormComprobanteNC] = useState(
+    comprobanteNotaCreditoInicial
+  );
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: '',
@@ -237,6 +251,56 @@ function CuentaCorrienteProveedoresPage() {
     }
   };
 
+  const abrirCompletarNotaCredito = (movimiento) => {
+    setMovimientoComprobanteNC(movimiento);
+    setFormComprobanteNC({
+      ...comprobanteNotaCreditoInicial,
+      fecha: String(movimiento.fecha || '').slice(0, 10) || fechaInputDesdeHoy(),
+      observaciones: movimiento.observaciones || ''
+    });
+    setOpenComprobanteNC(true);
+  };
+
+  const cerrarCompletarNotaCredito = () => {
+    setOpenComprobanteNC(false);
+    setMovimientoComprobanteNC(null);
+    setFormComprobanteNC(comprobanteNotaCreditoInicial);
+  };
+
+  const handleComprobanteNC = (event) => {
+    const { name, value } = event.target;
+
+    setFormComprobanteNC((actual) => ({
+      ...actual,
+      [name]: value
+    }));
+  };
+
+  const guardarComprobanteNC = async () => {
+    try {
+      await completarNotaCreditoProveedorRequest(
+        movimientoComprobanteNC.id,
+        formComprobanteNC
+      );
+      cerrarCompletarNotaCredito();
+      await cargarDatos();
+      setSnackbar({
+        open: true,
+        message: 'Comprobante actualizado',
+        severity: 'success'
+      });
+    } catch (error) {
+      console.log(error);
+      setSnackbar({
+        open: true,
+        message:
+          error.response?.data?.mensaje ||
+          'Error completando comprobante',
+        severity: 'error'
+      });
+    }
+  };
+
   const columns = [
     {
       field: 'fecha',
@@ -308,25 +372,46 @@ function CuentaCorrienteProveedoresPage() {
     {
       field: 'acciones',
       headerName: '',
-      width: 80,
+      width: 120,
       sortable: false,
       filterable: false,
-      renderCell: (params) => (
-        <Tooltip title="Anular">
-          <span>
-            <IconButton
-              color="error"
-              disabled={
-                params.row.origen === 'AUTO' ||
-                params.row.estado === 'ANULADO'
-              }
-              onClick={() => anularMovimiento(params.row.id)}
-            >
-              <CancelIcon />
-            </IconButton>
-          </span>
-        </Tooltip>
-      )
+      renderCell: (params) => {
+        const puedeCompletarNC =
+          params.row.tipo === 'NOTA_CREDITO' &&
+          params.row.origen === 'AUTO' &&
+          (!params.row.comprobanteNumero ||
+            params.row.comprobanteNumero === 'PENDIENTE') &&
+          params.row.estado !== 'ANULADO';
+
+        return (
+          <Box display="flex" gap={0.5}>
+            {puedeCompletarNC && (
+              <Tooltip title="Completar comprobante">
+                <IconButton
+                  color="primary"
+                  onClick={() => abrirCompletarNotaCredito(params.row)}
+                >
+                  <EditIcon />
+                </IconButton>
+              </Tooltip>
+            )}
+            <Tooltip title="Anular">
+              <span>
+                <IconButton
+                  color="error"
+                  disabled={
+                    params.row.origen === 'AUTO' ||
+                    params.row.estado === 'ANULADO'
+                  }
+                  onClick={() => anularMovimiento(params.row.id)}
+                >
+                  <CancelIcon />
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Box>
+        );
+      }
     }
   ];
 
@@ -600,6 +685,73 @@ function CuentaCorrienteProveedoresPage() {
             Cancelar
           </Button>
           <Button variant="contained" onClick={guardarMovimiento}>
+            Guardar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={openComprobanteNC}
+        onClose={cerrarCompletarNotaCredito}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Completar nota de credito</DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Esta accion solo completa el numero del comprobante pendiente. No
+            crea otro movimiento ni cambia el importe.
+          </Alert>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: {
+                xs: '1fr',
+                md: '1fr 1fr'
+              },
+              gap: 2,
+              mt: 1
+            }}
+          >
+            <TextField
+              label="Punto venta"
+              name="puntoVenta"
+              value={formComprobanteNC.puntoVenta}
+              onChange={handleComprobanteNC}
+              placeholder="00025"
+            />
+            <TextField
+              label="Numero"
+              name="numero"
+              value={formComprobanteNC.numero}
+              onChange={handleComprobanteNC}
+              placeholder="00012345"
+            />
+            <TextField
+              label="Fecha"
+              name="fecha"
+              type="date"
+              value={formComprobanteNC.fecha}
+              onChange={handleComprobanteNC}
+              InputLabelProps={{ shrink: true }}
+              sx={{ gridColumn: { md: '1 / 3' } }}
+            />
+            <TextField
+              label="Observaciones"
+              name="observaciones"
+              value={formComprobanteNC.observaciones}
+              onChange={handleComprobanteNC}
+              multiline
+              minRows={2}
+              sx={{ gridColumn: { md: '1 / 3' } }}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={cerrarCompletarNotaCredito}>
+            Cancelar
+          </Button>
+          <Button variant="contained" onClick={guardarComprobanteNC}>
             Guardar
           </Button>
         </DialogActions>

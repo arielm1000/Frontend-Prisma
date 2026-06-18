@@ -30,3 +30,11 @@ export const anularCuentaCorrienteProveedorMovimientoRequest = async (id) => {
   );
   return data;
 };
+
+export const completarNotaCreditoProveedorRequest = async (id, comprobante) => {
+  const { data } = await client.patch(
+    `/cuenta-corriente-proveedores/${id}/completar-nota-credito`,
+    comprobante
+  );
+  return data;
+};
