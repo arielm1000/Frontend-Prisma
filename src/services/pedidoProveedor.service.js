@@ -52,6 +52,14 @@ export const cancelarPendientePedidoProveedorRequest = async (id, payload) => {
   return data;
 };
 
+export const reactivarPendientePedidoProveedorRequest = async (id, payload) => {
+  const { data } = await client.patch(
+    `/pedidos-proveedor/${id}/reactivar-pendiente`,
+    payload
+  );
+  return data;
+};
+
 export const getHistoricoPedidoProveedorRequest = async (id) => {
   const { data } = await client.get(`/pedidos-proveedor/${id}/historico`);
   return data;

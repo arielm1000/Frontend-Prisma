@@ -37,6 +37,7 @@ import HistoryIcon from '@mui/icons-material/History';
 import MoveToInboxIcon from '@mui/icons-material/MoveToInbox';
 import PrintIcon from '@mui/icons-material/Print';
 import ReplayIcon from '@mui/icons-material/Replay';
+import RestoreIcon from '@mui/icons-material/Restore';
 import SendIcon from '@mui/icons-material/Send';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import {
@@ -48,6 +49,7 @@ import {
   getHistoricoPedidoProveedorRequest,
   getPedidosProveedorRequest,
   getResumenPedidosProveedorRequest,
+  reactivarPendientePedidoProveedorRequest,
   reactivarPedidoProveedorRequest,
   updatePedidoProveedorRequest
 } from '../../services/pedidoProveedor.service';
@@ -695,6 +697,9 @@ function PedidosProveedorPage() {
   const [openCancelarPendiente, setOpenCancelarPendiente] = useState(false);
   const [pedidoCancelarPendiente, setPedidoCancelarPendiente] = useState(null);
   const [detallesCancelarPendiente, setDetallesCancelarPendiente] = useState([]);
+  const [openReactivarPendiente, setOpenReactivarPendiente] = useState(false);
+  const [pedidoReactivarPendiente, setPedidoReactivarPendiente] = useState(null);
+  const [detallesReactivarPendiente, setDetallesReactivarPendiente] = useState([]);
   const [openReporteRecepcion, setOpenReporteRecepcion] = useState(false);
   const [recepcionReporte, setRecepcionReporte] = useState(null);
   const [openControlRecepcion, setOpenControlRecepcion] = useState(false);
@@ -1333,6 +1338,110 @@ function PedidosProveedorPage() {
         message:
           error.response?.data?.mensaje ||
           'Error cancelando pendiente',
+        severity: 'error'
+      });
+    }
+  };
+
+  const abrirReactivarPendiente = (pedido) => {
+    setPedidoReactivarPendiente(pedido);
+    setDetallesReactivarPendiente(
+      (pedido.detalles || [])
+        .filter((detalle) => Number(detalle.cantidadCancelada || 0) > 0)
+        .map((detalle) => ({
+          pedidoProveedorDetalleId: detalle.id,
+          producto: `${detalle.producto?.codigo || ''} - ${detalle.producto?.nombre || ''}`,
+          cantidadPedida: Number(detalle.cantidadPedida || 0),
+          cantidadRecibida: calcularTotalRecibidoDetalle(detalle),
+          cantidadCancelada: Number(detalle.cantidadCancelada || 0),
+          cantidadReactivar: '',
+          motivo: ''
+        }))
+    );
+    setOpenReactivarPendiente(true);
+  };
+
+  const cerrarReactivarPendiente = () => {
+    setOpenReactivarPendiente(false);
+    setPedidoReactivarPendiente(null);
+    setDetallesReactivarPendiente([]);
+  };
+
+  const cambiarDetalleReactivarPendiente = (id, name, value) => {
+    setDetallesReactivarPendiente((actuales) =>
+      actuales.map((detalle) =>
+        detalle.pedidoProveedorDetalleId === id
+          ? {
+              ...detalle,
+              [name]: value
+            }
+          : detalle
+      )
+    );
+  };
+
+  const guardarReactivarPendiente = async () => {
+    const detallesAEnviar = detallesReactivarPendiente
+      .map((detalle) => ({
+        pedidoProveedorDetalleId: detalle.pedidoProveedorDetalleId,
+        cantidadReactivar: Number(detalle.cantidadReactivar || 0),
+        motivo: detalle.motivo
+      }))
+      .filter((detalle) => detalle.cantidadReactivar > 0);
+
+    if (detallesAEnviar.length === 0) {
+      setSnackbar({
+        open: true,
+        message: 'Debe indicar al menos una cantidad a reactivar',
+        severity: 'warning'
+      });
+      return;
+    }
+
+    const detalleInvalido = detallesAEnviar.some((detalle) => {
+      const original = detallesReactivarPendiente.find(
+        (item) =>
+          item.pedidoProveedorDetalleId === detalle.pedidoProveedorDetalleId
+      );
+
+      return (
+        detalle.cantidadReactivar > Number(original?.cantidadCancelada || 0) ||
+        !detalle.motivo?.trim()
+      );
+    });
+
+    if (detalleInvalido) {
+      setSnackbar({
+        open: true,
+        message: 'Revise cantidades y motivos de la reactivacion',
+        severity: 'warning'
+      });
+      return;
+    }
+
+    try {
+      await reactivarPendientePedidoProveedorRequest(
+        pedidoReactivarPendiente.id,
+        {
+          detalles: detallesAEnviar
+        }
+      );
+      setLoading(true);
+      await cargarPedidos();
+      await cargarResumenPedidos();
+      cerrarReactivarPendiente();
+      setSnackbar({
+        open: true,
+        message: 'Saldo cancelado reactivado correctamente',
+        severity: 'success'
+      });
+    } catch (error) {
+      console.log(error);
+      setSnackbar({
+        open: true,
+        message:
+          error.response?.data?.mensaje ||
+          'Error reactivando saldo cancelado',
         severity: 'error'
       });
     }
@@ -2480,7 +2589,7 @@ function PedidosProveedorPage() {
     {
       field: 'acciones',
       headerName: 'Acciones',
-      width: 340,
+      width: 380,
       sortable: false,
       filterable: false,
       renderCell: (params) => (
@@ -2548,6 +2657,28 @@ function PedidosProveedorPage() {
             >
               <CancelIcon />
             </IconButton>
+          </Tooltip>
+
+          <Tooltip title="Reactivar saldo cancelado">
+            <span>
+              <IconButton
+                color="secondary"
+                onClick={() => abrirReactivarPendiente(params.row)}
+                disabled={
+                  ![
+                    'ENVIADO',
+                    'CONFIRMADO',
+                    'RECIBIDO_PARCIAL',
+                    'RECIBIDO_COMPLETO'
+                  ].includes(params.row.estado) ||
+                  !(params.row.detalles || []).some(
+                    (detalle) => Number(detalle.cantidadCancelada || 0) > 0
+                  )
+                }
+              >
+                <RestoreIcon />
+              </IconButton>
+            </span>
           </Tooltip>
 
           <Tooltip title="Cancelar">
@@ -3475,6 +3606,106 @@ function PedidosProveedorPage() {
             disabled={detallesCancelarPendiente.length === 0}
           >
             Guardar cancelacion
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={openReactivarPendiente}
+        onClose={cerrarReactivarPendiente}
+        fullWidth
+        maxWidth="lg"
+      >
+        <DialogTitle>
+          Reactivar saldo cancelado {pedidoReactivarPendiente?.numeroPedido}
+        </DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Esta accion recupera cantidades canceladas y las vuelve a dejar
+            pendientes de recepcion. No modifica lo recibido ni la cuenta
+            corriente.
+          </Alert>
+
+          <Box sx={{ display: 'grid', gap: 1.5 }}>
+            {detallesReactivarPendiente.length === 0 ? (
+              <Typography color="text.secondary">
+                No hay cantidades canceladas para reactivar.
+              </Typography>
+            ) : (
+              detallesReactivarPendiente.map((detalle) => (
+                <Paper
+                  key={detalle.pedidoProveedorDetalleId}
+                  variant="outlined"
+                  sx={{ p: 2 }}
+                >
+                  <Typography fontWeight={700} sx={{ mb: 1 }}>
+                    {detalle.producto}
+                  </Typography>
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: {
+                        xs: '1fr',
+                        md: 'repeat(6, 1fr)'
+                      },
+                      gap: 1.5,
+                      alignItems: 'center'
+                    }}
+                  >
+                    <Typography variant="body2">
+                      Pedido: {detalle.cantidadPedida}
+                    </Typography>
+                    <Typography variant="body2">
+                      Recibido: {detalle.cantidadRecibida}
+                    </Typography>
+                    <Typography variant="body2" fontWeight={700}>
+                      Cancelado: {detalle.cantidadCancelada}
+                    </Typography>
+                    <TextField
+                      label="Reactivar"
+                      type="number"
+                      value={detalle.cantidadReactivar}
+                      onChange={(event) =>
+                        cambiarDetalleReactivarPendiente(
+                          detalle.pedidoProveedorDetalleId,
+                          'cantidadReactivar',
+                          event.target.value
+                        )
+                      }
+                      inputProps={{
+                        min: 0,
+                        max: detalle.cantidadCancelada
+                      }}
+                    />
+                    <TextField
+                      label="Motivo"
+                      value={detalle.motivo}
+                      onChange={(event) =>
+                        cambiarDetalleReactivarPendiente(
+                          detalle.pedidoProveedorDetalleId,
+                          'motivo',
+                          event.target.value
+                        )
+                      }
+                      sx={{ gridColumn: { md: '5 / 7' } }}
+                    />
+                  </Box>
+                </Paper>
+              ))
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={cerrarReactivarPendiente}>
+            Cerrar
+          </Button>
+          <Button
+            variant="contained"
+            color="secondary"
+            onClick={guardarReactivarPendiente}
+            disabled={detallesReactivarPendiente.length === 0}
+          >
+            Reactivar saldo
           </Button>
         </DialogActions>
       </Dialog>
