@@ -13,6 +13,7 @@ import {
   FormControlLabel,
   GlobalStyles,
   IconButton,
+  InputAdornment,
   InputLabel,
   MenuItem,
   Paper,
@@ -68,6 +69,71 @@ import { getEmpresasRequest } from '../../services/empresa.service';
 import { getTransportesRequest } from '../../services/transporte.service';
 import { getLocalesRequest } from '../../services/local.service';
 import { getProductosRequest } from '../../services/producto.service';
+import ProductoNoPedidoDialog from './ProductoNoPedidoDialog';
+
+const CampoMoneda = ({
+  value,
+  onChange,
+  onBlur,
+  onFocus,
+  inputProps,
+  InputProps,
+  ...props
+}) => {
+  const [enEdicion, setEnEdicion] = useState(false);
+  const numero = Number(value);
+  const valorVisible =
+    enEdicion || value === '' || value === null || value === undefined
+      ? value ?? ''
+      : Number.isFinite(numero)
+        ? numero.toFixed(2)
+        : '0.00';
+
+  const normalizar = (event) => {
+    setEnEdicion(false);
+    const valorNumerico = Number(event.target.value || 0);
+    const valorNormalizado = Number.isFinite(valorNumerico)
+      ? valorNumerico.toFixed(2)
+      : '0.00';
+
+    onChange?.({
+      target: {
+        name: event.target.name,
+        value: valorNormalizado
+      }
+    });
+    onBlur?.(event);
+  };
+
+  return (
+    <TextField
+      {...props}
+      type="number"
+      value={valorVisible}
+      onChange={onChange}
+      onFocus={(event) => {
+        setEnEdicion(true);
+        onFocus?.(event);
+      }}
+      onBlur={normalizar}
+      inputProps={{
+        ...inputProps,
+        step: '0.01',
+        style: {
+          textAlign: 'right',
+          ...inputProps?.style
+        }
+      }}
+      InputProps={{
+        ...InputProps,
+        startAdornment:
+          InputProps?.startAdornment || (
+            <InputAdornment position="start">$</InputAdornment>
+          )
+      }}
+    />
+  );
+};
 
 const fechaInputDesdeHoy = (dias = 0) => {
   const fecha = new Date();
@@ -690,6 +756,7 @@ function PedidosProveedorPage() {
   const [pedidoRecepcion, setPedidoRecepcion] = useState(null);
   const [formRecepcion, setFormRecepcion] = useState(recepcionInicial);
   const [detallesRecepcion, setDetallesRecepcion] = useState([]);
+  const [openProductoNoPedido, setOpenProductoNoPedido] = useState(false);
   const [otrosImportesRecepcion, setOtrosImportesRecepcion] = useState([]);
   const [recepcionesCargadas, setRecepcionesCargadas] = useState([]);
   const [openDetalle, setOpenDetalle] = useState(false);
@@ -1246,7 +1313,10 @@ function PedidosProveedorPage() {
     setDetallesCancelarPendiente(
       (pedido.detalles || [])
         .map((detalle) => ({
+          tempId: `pedido-${detalle.id}`,
           pedidoProveedorDetalleId: detalle.id,
+          productoId: detalle.productoId,
+          origen: 'PEDIDO',
           producto: `${detalle.producto?.codigo || ''} - ${detalle.producto?.nombre || ''}`,
           cantidadPedida: Number(detalle.cantidadPedida || 0),
           cantidadRecibida: calcularRecibido(detalle),
@@ -1770,10 +1840,10 @@ function PedidosProveedorPage() {
     setDetallesControlRecepcion(
       (recepcion.detalles || []).map((detalle) => ({
         detalleId: detalle.id,
-        producto:
-          detalle.pedidoProveedorDetalle?.producto?.codigo
-            ? `${detalle.pedidoProveedorDetalle.producto.codigo} - ${detalle.pedidoProveedorDetalle.producto.nombre}`
-            : detalle.pedidoProveedorDetalle?.producto?.nombre || '',
+        producto: (detalle.producto ||
+          detalle.pedidoProveedorDetalle?.producto)?.codigo
+          ? `${(detalle.producto || detalle.pedidoProveedorDetalle.producto).codigo} - ${(detalle.producto || detalle.pedidoProveedorDetalle.producto).nombre}`
+          : (detalle.producto || detalle.pedidoProveedorDetalle?.producto)?.nombre || '',
         cantidadFacturada: Number(detalle.cantidadFacturada || 0),
         cantidadRecibida: Number(detalle.cantidadRecibida || 0),
         cantidadControlada:
@@ -1864,10 +1934,10 @@ function PedidosProveedorPage() {
 
         return {
           recepcionDetalleId: detalle.id,
-          producto:
-            detalle.pedidoProveedorDetalle?.producto?.codigo
-              ? `${detalle.pedidoProveedorDetalle.producto.codigo} - ${detalle.pedidoProveedorDetalle.producto.nombre}`
-              : detalle.pedidoProveedorDetalle?.producto?.nombre || '',
+          producto: (detalle.producto ||
+            detalle.pedidoProveedorDetalle?.producto)?.codigo
+            ? `${(detalle.producto || detalle.pedidoProveedorDetalle.producto).codigo} - ${(detalle.producto || detalle.pedidoProveedorDetalle.producto).nombre}`
+            : (detalle.producto || detalle.pedidoProveedorDetalle?.producto)?.nombre || '',
           cantidadFacturada: Number(detalle.cantidadFacturada || 0),
           cantidadControlada,
           tipo:
@@ -2118,6 +2188,7 @@ function PedidosProveedorPage() {
   };
 
   const cerrarRecepcion = () => {
+    setOpenProductoNoPedido(false);
     setOpenRecepcion(false);
     setPedidoRecepcion(null);
     setFormRecepcion(recepcionInicial);
@@ -2147,7 +2218,7 @@ function PedidosProveedorPage() {
   const cambiarDetalleRecepcion = (id, name, value) => {
     setDetallesRecepcion(
       detallesRecepcion.map((detalle) => {
-        if (detalle.pedidoProveedorDetalleId !== id) {
+        if (detalle.tempId !== id) {
           return detalle;
         }
 
@@ -2156,7 +2227,7 @@ function PedidosProveedorPage() {
           [name]: value
         };
 
-        if (name === 'cantidadRecibida') {
+        if (name === 'cantidadRecibida' && detalle.origen === 'PEDIDO') {
           const excedente = Math.max(
             Number(value || 0) - Number(detalle.pendiente || 0),
             0
@@ -2169,6 +2240,59 @@ function PedidosProveedorPage() {
 
         return actualizado;
       })
+    );
+  };
+
+  const agregarProductoNoPedido = (producto) => {
+    const yaIncluido =
+      detallesRecepcion.some(
+        (detalle) => Number(detalle.productoId) === Number(producto.id)
+      ) ||
+      (pedidoRecepcion?.detalles || []).some(
+        (detalle) => Number(detalle.productoId) === Number(producto.id)
+      );
+
+    if (yaIncluido) {
+      setSnackbar({
+        open: true,
+        message: 'El producto ya forma parte del pedido o de esta recepcion',
+        severity: 'warning'
+      });
+      return false;
+    }
+
+    setDetallesRecepcion((actuales) => [
+      ...actuales,
+      {
+        tempId: `no-pedido-${Date.now()}-${producto.id}`,
+        pedidoProveedorDetalleId: null,
+        productoId: producto.id,
+        origen: 'NO_PEDIDO',
+        producto: `${producto.codigo || ''} - ${producto.nombre || ''}`,
+        cantidadPedida: 0,
+        pendiente: 0,
+        cantidadFacturada: 1,
+        cantidadRecibida: 1,
+        cantidadExcedente: 0,
+        cantidadRechazada: 0,
+        accionExcedente: 'SIN_EXCEDENTE',
+        precioListaProveedor: 0,
+        descuentosProveedorTexto: '',
+        ivaPorcentaje: 21,
+        margenesPrecioPublicoTexto:
+          formRecepcion.margenesPrecioPublicoGeneralTexto || '',
+        precioPublicoAnterior: Number(producto.precioPublico || 0),
+        precioPublicoNuevo: '',
+        actualizarPrecioPublico: true,
+        observaciones: ''
+      }
+    ]);
+    return true;
+  };
+
+  const eliminarProductoNoPedido = (tempId) => {
+    setDetallesRecepcion((actuales) =>
+      actuales.filter((detalle) => detalle.tempId !== tempId)
     );
   };
 
@@ -2221,11 +2345,18 @@ function PedidosProveedorPage() {
           );
 
           return {
-            pedidoProveedorDetalleId: detalle.pedidoProveedorDetalleId,
+            pedidoProveedorDetalleId:
+              detalle.origen === 'PEDIDO'
+                ? detalle.pedidoProveedorDetalleId
+                : null,
+            productoId: detalle.productoId,
+            origen: detalle.origen,
             cantidadFacturada: Number(detalle.cantidadFacturada || 0),
             cantidadRecibida: Number(detalle.cantidadFacturada || 0),
             cantidadRechazada: 0,
-            accionExcedente:
+            accionExcedente: detalle.origen === 'NO_PEDIDO'
+              ? 'SIN_EXCEDENTE'
+              :
               Number(detalle.cantidadFacturada || 0) >
               Number(detalle.pendiente || 0)
                 ? 'PENDIENTE'
@@ -2560,6 +2691,8 @@ function PedidosProveedorPage() {
       field: 'totalConIva',
       headerName: 'Total',
       width: 150,
+      align: 'right',
+      headerAlign: 'right',
       valueGetter: (_, row) => formatoMoneda(row.totalConIva)
     },
     {
@@ -3225,10 +3358,9 @@ function PedidosProveedorPage() {
               sx={{ gridColumn: { md: '3 / 4' } }}
             />
 
-            <TextField
+            <CampoMoneda
               label="Costo transporte"
               name="transporteCostoFinal"
-              type="number"
               value={form.transporteCostoFinal}
               onChange={handleFormChange}
               sx={{ gridColumn: { md: '4 / 5' } }}
@@ -3365,9 +3497,8 @@ function PedidosProveedorPage() {
                       <MenuItem value="PROMOCION">Promocion</MenuItem>
                     </TextField>
 
-                    <TextField
+                    <CampoMoneda
                       label="Precio proveedor s/IVA"
-                      type="number"
                       value={detalle.precioListaSinIva}
                       onChange={(e) =>
                         cambiarDetalle(
@@ -3531,7 +3662,7 @@ function PedidosProveedorPage() {
             ) : (
               detallesCancelarPendiente.map((detalle) => (
                 <Paper
-                  key={detalle.pedidoProveedorDetalleId}
+                  key={detalle.tempId}
                   variant="outlined"
                   sx={{ p: 2 }}
                 >
@@ -3813,10 +3944,9 @@ function PedidosProveedorPage() {
               size="small"
               sx={{ gridColumn: { md: 'span 2' } }}
             />
-            <TextField
+            <CampoMoneda
               label="Costo s/IVA prov."
               name="costoSinIvaProveedor"
-              type="number"
               value={formRecepcion.costoSinIvaProveedor}
               onChange={cambiarRecepcion}
               helperText={`Sistema: ${formatoMoneda(totalesRecepcion.costoSinIvaSistema)} | Dif.: ${formatoMoneda(
@@ -3826,10 +3956,9 @@ function PedidosProveedorPage() {
               size="small"
               sx={{ gridColumn: { md: 'span 2' } }}
             />
-            <TextField
+            <CampoMoneda
               label="Desc. prov."
               name="descuentoProveedorImporte"
-              type="number"
               value={formRecepcion.descuentoProveedorImporte}
               onChange={cambiarRecepcion}
               helperText={`Sistema: ${formatoMoneda(totalesRecepcion.descuentoSistemaImporte)} | Dif.: ${formatoMoneda(
@@ -3839,10 +3968,9 @@ function PedidosProveedorPage() {
               size="small"
               sx={{ gridColumn: { md: 'span 2' } }}
             />
-            <TextField
+            <CampoMoneda
               label="IVA prov."
               name="ivaProveedorImporte"
-              type="number"
               value={formRecepcion.ivaProveedorImporte}
               onChange={cambiarRecepcion}
               helperText={`Sistema: ${formatoMoneda(totalesRecepcion.ivaProductos)} | Dif.: ${formatoMoneda(
@@ -3852,10 +3980,9 @@ function PedidosProveedorPage() {
               size="small"
               sx={{ gridColumn: { md: 'span 2' } }}
             />
-            <TextField
+            <CampoMoneda
               label="Total factura"
               name="totalFacturaProveedor"
-              type="number"
               value={formRecepcion.totalFacturaProveedor}
               onChange={cambiarRecepcion}
               helperText={`Sistema: ${formatoMoneda(totalesRecepcion.totalFacturaSistema)} | Dif.: ${formatoMoneda(
@@ -3864,10 +3991,9 @@ function PedidosProveedorPage() {
               size="small"
               sx={{ gridColumn: { md: 'span 2' } }}
             />
-            <TextField
+            <CampoMoneda
               label="Redondeo precio publico"
               name="redondeoBase"
-              type="number"
               value={formRecepcion.redondeoBase}
               onChange={cambiarRecepcion}
               helperText="Ej: 1, 10, 50, 100"
@@ -3978,9 +4104,8 @@ function PedidosProveedorPage() {
                         )
                       }
                     />
-                    <TextField
+                    <CampoMoneda
                       label="Importe"
-                      type="number"
                       value={importe.importe}
                       onChange={(e) =>
                         cambiarImporteRecepcion(
@@ -4008,6 +4133,16 @@ function PedidosProveedorPage() {
 
           <Divider sx={{ my: 2 }} />
 
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1.5 }}>
+            <Button
+              variant="outlined"
+              startIcon={<AddIcon />}
+              onClick={() => setOpenProductoNoPedido(true)}
+            >
+              Agregar producto no pedido
+            </Button>
+          </Box>
+
           <Box sx={{ display: 'grid', gap: 2 }}>
             {detallesRecepcion.map((detalle) => {
               const precioRecepcion = calcularPrecioRecepcion(
@@ -4017,7 +4152,7 @@ function PedidosProveedorPage() {
 
               return (
                 <Paper
-                  key={detalle.pedidoProveedorDetalleId}
+                  key={detalle.tempId}
                   variant="outlined"
                   sx={{ p: 2 }}
                 >
@@ -4033,6 +4168,14 @@ function PedidosProveedorPage() {
                     }}
                   >
                     <Box>
+                      {detalle.origen === 'NO_PEDIDO' && (
+                        <Chip
+                          label="NO PEDIDO"
+                          size="small"
+                          color="warning"
+                          sx={{ mb: 0.5 }}
+                        />
+                      )}
                       <Typography
                         variant="body2"
                         fontWeight={700}
@@ -4050,13 +4193,13 @@ function PedidosProveedorPage() {
                     </Box>
                     <TextField
                       label="Pedido"
-                      value={detalle.cantidadPedida}
+                      value={detalle.origen === 'NO_PEDIDO' ? '-' : detalle.cantidadPedida}
                       InputProps={{ readOnly: true }}
                       size="small"
                     />
                     <TextField
                       label="Pendiente"
-                      value={detalle.pendiente}
+                      value={detalle.origen === 'NO_PEDIDO' ? '-' : detalle.pendiente}
                       InputProps={{ readOnly: true }}
                       size="small"
                     />
@@ -4066,20 +4209,19 @@ function PedidosProveedorPage() {
                       value={detalle.cantidadFacturada}
                       onChange={(e) =>
                         cambiarDetalleRecepcion(
-                          detalle.pedidoProveedorDetalleId,
+                          detalle.tempId,
                           'cantidadFacturada',
                           e.target.value
                         )
                       }
                       size="small"
                     />
-                    <TextField
+                    <CampoMoneda
                       label="Lista proveedor s/IVA"
-                      type="number"
                       value={detalle.precioListaProveedor}
                       onChange={(e) =>
                         cambiarDetalleRecepcion(
-                          detalle.pedidoProveedorDetalleId,
+                          detalle.tempId,
                           'precioListaProveedor',
                           e.target.value
                         )
@@ -4092,7 +4234,7 @@ function PedidosProveedorPage() {
                       value={detalle.descuentosProveedorTexto}
                       onChange={(e) =>
                         cambiarDetalleRecepcion(
-                          detalle.pedidoProveedorDetalleId,
+                          detalle.tempId,
                           'descuentosProveedorTexto',
                           e.target.value
                         )
@@ -4107,7 +4249,7 @@ function PedidosProveedorPage() {
                       value={detalle.ivaPorcentaje}
                       onChange={(e) =>
                         cambiarDetalleRecepcion(
-                          detalle.pedidoProveedorDetalleId,
+                          detalle.tempId,
                           'ivaPorcentaje',
                           e.target.value
                         )
@@ -4120,7 +4262,7 @@ function PedidosProveedorPage() {
                       value={detalle.margenesPrecioPublicoTexto}
                       onChange={(e) =>
                         cambiarDetalleRecepcion(
-                          detalle.pedidoProveedorDetalleId,
+                          detalle.tempId,
                           'margenesPrecioPublicoTexto',
                           e.target.value
                         )
@@ -4129,13 +4271,12 @@ function PedidosProveedorPage() {
                       size="small"
                       helperText=" "
                     />
-                    <TextField
+                    <CampoMoneda
                       label="Precio publico nuevo"
-                      type="number"
                       value={detalle.precioPublicoNuevo}
                       onChange={(e) =>
                         cambiarDetalleRecepcion(
-                          detalle.pedidoProveedorDetalleId,
+                          detalle.tempId,
                           'precioPublicoNuevo',
                           e.target.value
                         )
@@ -4160,7 +4301,7 @@ function PedidosProveedorPage() {
                           checked={detalle.actualizarPrecioPublico}
                           onChange={(e) =>
                             cambiarDetalleRecepcion(
-                              detalle.pedidoProveedorDetalleId,
+                              detalle.tempId,
                               'actualizarPrecioPublico',
                               e.target.checked
                             )
@@ -4170,6 +4311,20 @@ function PedidosProveedorPage() {
                       label="Actualizar precio"
                     />
                   </Box>
+
+                  {detalle.origen === 'NO_PEDIDO' && (
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
+                      <Tooltip title="Quitar producto no pedido">
+                        <IconButton
+                          color="error"
+                          size="small"
+                          onClick={() => eliminarProductoNoPedido(detalle.tempId)}
+                        >
+                          <DeleteIcon />
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
+                  )}
 
                   <Box
                     sx={{
@@ -4983,10 +5138,12 @@ function PedidosProveedorPage() {
                             }}
                           >
                             <Typography variant="body2">
-                              {detalle.pedidoProveedorDetalle?.producto?.codigo
-                                ? `${detalle.pedidoProveedorDetalle.producto.codigo} - ${detalle.pedidoProveedorDetalle.producto.nombre}`
-                                : detalle.pedidoProveedorDetalle?.producto
-                                    ?.nombre}
+                              {(detalle.producto ||
+                                detalle.pedidoProveedorDetalle?.producto)?.codigo
+                                ? `${(detalle.producto || detalle.pedidoProveedorDetalle.producto).codigo} - ${(detalle.producto || detalle.pedidoProveedorDetalle.producto).nombre}`
+                                : (detalle.producto ||
+                                    detalle.pedidoProveedorDetalle?.producto)?.nombre}
+                              {detalle.origen === 'NO_PEDIDO' && ' (NO PEDIDO)'}
                             </Typography>
                             <Typography variant="body2">
                               Fact.: {detalle.cantidadFacturada}
@@ -5097,10 +5254,9 @@ function PedidosProveedorPage() {
               value={formCorregirFactura.facturaNumero}
               onChange={handleCorregirFacturaChange}
             />
-            <TextField
+            <CampoMoneda
               label="Total proveedor"
               name="totalFacturaProveedor"
-              type="number"
               value={formCorregirFactura.totalFacturaProveedor}
               onChange={handleCorregirFacturaChange}
               helperText={`Sistema: ${formatoMoneda(
@@ -5117,6 +5273,7 @@ function PedidosProveedorPage() {
                   )
               )}
               InputProps={{ readOnly: true }}
+              inputProps={{ style: { textAlign: 'right' } }}
               sx={{ gridColumn: { md: '3 / 5' } }}
             />
             {Math.abs(
@@ -5616,10 +5773,9 @@ function PedidosProveedorPage() {
               InputLabelProps={{ shrink: true }}
             />
 
-            <TextField
+            <CampoMoneda
               label="Importe"
               name="importe"
-              type="number"
               value={formGestionAdministrativa.importe}
               onChange={handleGestionAdministrativaChange}
               sx={{ gridColumn: { md: '1 / 3' } }}
@@ -5670,7 +5826,8 @@ function PedidosProveedorPage() {
               new Map(
                 detallesReporte
                   .flatMap((detalle) =>
-                    detalle.pedidoProveedorDetalle?.producto?.stocks || []
+                    (detalle.producto ||
+                      detalle.pedidoProveedorDetalle?.producto)?.stocks || []
                   )
                   .filter((stock) => stock.local)
                   .map((stock) => [stock.localId, stock.local])
@@ -5806,7 +5963,9 @@ function PedidosProveedorPage() {
                   <Box component="tbody">
                     {detallesReporte.map((detalle) => {
                       const producto =
-                        detalle.pedidoProveedorDetalle?.producto || {};
+                        detalle.producto ||
+                        detalle.pedidoProveedorDetalle?.producto ||
+                        {};
                       const stocksByLocal = new Map(
                         (producto.stocks || []).map((stock) => [
                           stock.localId,
@@ -5824,7 +5983,14 @@ function PedidosProveedorPage() {
                           <Box component="tr">
                             <Box component="td">{producto.codigo || '-'}</Box>
                             <Box component="td">
-                              {truncarTexto(producto.nombre, 30)}
+                              {truncarTexto(
+                                `${producto.nombre || ''}${
+                                  detalle.origen === 'NO_PEDIDO'
+                                    ? ' [NO PEDIDO]'
+                                    : ''
+                                }`,
+                                30
+                              )}
                             </Box>
                             <Box component="td" sx={{ textAlign: 'right' }}>
                               {cantidadFacturada}
@@ -5932,6 +6098,12 @@ function PedidosProveedorPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ProductoNoPedidoDialog
+        open={openProductoNoPedido}
+        onClose={() => setOpenProductoNoPedido(false)}
+        onAgregar={agregarProductoNoPedido}
+      />
 
       <Snackbar
         open={snackbar.open}
