@@ -333,6 +333,19 @@ const parseDescuentos = (texto = '') =>
     .map((valor) => Number(valor.trim().replace(',', '.')))
     .filter((valor) => Number.isFinite(valor) && valor > 0);
 
+const tienePorcentajeNegativo = (texto = '') =>
+  String(texto)
+    .split('+')
+    .map((valor) => Number(valor.trim().replace(',', '.')))
+    .some((valor) => Number.isFinite(valor) && valor < 0);
+
+const numeroNegativo = (valor) =>
+  valor !== '' &&
+  valor !== null &&
+  valor !== undefined &&
+  Number.isFinite(Number(valor)) &&
+  Number(valor) < 0;
+
 const descuentosToTexto = (descuentos) =>
   Array.isArray(descuentos) ? descuentos.join(' + ') : '';
 
@@ -502,6 +515,58 @@ const calcularPrecioRecepcion = (detalle, redondeoBase) => {
   };
 };
 
+const calcularPrecioFacturadoRecepcion = (detalle) => {
+  const descuentos = parseDescuentos(
+    detalle.descuentosFacturadosProveedorTexto ??
+      detalle.descuentosProveedorTexto
+  );
+  const precioLista = Number(
+    detalle.precioListaFacturadoProveedor ??
+      detalle.precioListaProveedor ??
+      0
+  );
+  const precioConDescuento = aplicarDescuentos(precioLista, descuentos);
+  const precioConIva = redondear(
+    precioConDescuento * (1 + Number(detalle.ivaPorcentaje || 0) / 100)
+  );
+
+  return {
+    descuentos,
+    precioConDescuento,
+    precioConIva
+  };
+};
+
+const calcularDiferenciaPrecioFacturadoDetalle = (detalle, redondeoBase) => {
+  const cantidad = Number(
+    detalle.cantidadFacturada || detalle.cantidadRecibida || 0
+  );
+  const aceptado = calcularPrecioRecepcion(detalle, redondeoBase);
+  const facturado = calcularPrecioFacturadoRecepcion(detalle);
+
+  return redondear(cantidad * (facturado.precioConIva - aceptado.precioConIva));
+};
+
+const calcularDiferenciaPrecioCorreccionFactura = (detalle) => {
+  const cantidad = Number(detalle.cantidadFacturada || 0);
+  const aceptadoConIva = redondear(
+    aplicarDescuentos(
+      Number(detalle.precioListaProveedor || 0),
+      porcentajesDesdeValor(detalle.descuentosProveedor)
+    ) *
+      (1 + Number(detalle.ivaPorcentaje || 0) / 100)
+  );
+  const facturadoConIva = redondear(
+    aplicarDescuentos(
+      Number(detalle.precioListaFacturadoProveedor || 0),
+      parseDescuentos(detalle.descuentosFacturadosProveedorTexto)
+    ) *
+      (1 + Number(detalle.ivaPorcentaje || 0) / 100)
+  );
+
+  return redondear(cantidad * (facturadoConIva - aceptadoConIva));
+};
+
 const porcentajesDesdeValor = (valor) => {
   if (Array.isArray(valor)) {
     return valor
@@ -537,6 +602,11 @@ const calcularImporteGestionAdministrativa = (recepcion) =>
         cantidadReclamo * calcularUnitarioConIvaRecepcion(detalle);
     }, 0)
   );
+
+const calcularImporteGestionAdministrativaEstimado = (recepcion) =>
+  Number(recepcion?.gestionAdministrativaImporte || 0) ||
+  Number(recepcion?.diferenciaPrecioFacturaTotal || 0) ||
+  calcularImporteGestionAdministrativa(recepcion);
 
 const totalDetalleConDescuentosGenerales = (detalle, pedido) => {
   const descuentosGenerales =
@@ -793,6 +863,7 @@ function PedidosProveedorPage() {
   const [formCorregirFactura, setFormCorregirFactura] = useState(
     facturaCorreccionInicial
   );
+  const [detallesCorregirFactura, setDetallesCorregirFactura] = useState([]);
   const [openHistorico, setOpenHistorico] = useState(false);
   const [historico, setHistorico] = useState([]);
   const [snackbar, setSnackbar] = useState({
@@ -857,6 +928,16 @@ function PedidosProveedorPage() {
       Number(formRecepcion.totalFacturaProveedor || 0) -
         totalFacturaSistema
     );
+    const diferenciaPrecioFacturaTotal = redondear(
+      detallesRecepcion.reduce((total, detalle) => {
+        const diferencia = calcularDiferenciaPrecioFacturadoDetalle(
+          detalle,
+          formRecepcion.redondeoBase
+        );
+
+        return total + Math.max(diferencia, 0);
+      }, 0)
+    );
 
     return {
       costoSinIvaSistema,
@@ -865,7 +946,8 @@ function PedidosProveedorPage() {
       ivaProductos,
       otrosImportesTotal,
       totalFacturaSistema,
-      diferenciaFactura
+      diferenciaFactura,
+      diferenciaPrecioFacturaTotal
     };
   }, [detallesRecepcion, otrosImportesRecepcion, formRecepcion]);
 
@@ -1848,7 +1930,6 @@ function PedidosProveedorPage() {
         cantidadRecibida: Number(detalle.cantidadRecibida || 0),
         cantidadControlada:
           detalle.cantidadControlada ?? Number(detalle.cantidadRecibida || 0),
-        cantidadFalladaControl: Number(detalle.cantidadFalladaControl || 0),
         observacionesControl: detalle.observacionesControl || ''
       }))
     );
@@ -1886,9 +1967,7 @@ function PedidosProveedorPage() {
           detalles: detallesControlRecepcion.map((detalle) => ({
             detalleId: detalle.detalleId,
             cantidadControlada: Number(detalle.cantidadControlada || 0),
-            cantidadFalladaControl: Number(
-              detalle.cantidadFalladaControl || 0
-            ),
+            cantidadFalladaControl: 0,
             observacionesControl: detalle.observacionesControl
           }))
         }
@@ -2160,7 +2239,10 @@ function PedidosProveedorPage() {
     setDetallesRecepcion(
       (pedido.detalles || [])
         .map((detalle) => ({
+          tempId: `pedido-${detalle.id}`,
           pedidoProveedorDetalleId: detalle.id,
+          productoId: detalle.productoId,
+          origen: 'PEDIDO',
           producto: `${detalle.producto?.codigo || ''} - ${detalle.producto?.nombre || ''}`,
           cantidadPedida: detalle.cantidadPedida,
           pendiente: calcularPendiente(detalle),
@@ -2171,6 +2253,12 @@ function PedidosProveedorPage() {
           accionExcedente: 'SIN_EXCEDENTE',
           precioListaProveedor: Number(detalle.precioListaSinIva || 0),
           descuentosProveedorTexto: combinarDescuentosTexto(
+            descuentoGeneralPedidoTexto,
+            descuentosToTexto(detalle.descuentosPorcentaje) ||
+              descuentoValorToTexto(detalle.descuentoPorcentaje)
+          ),
+          precioListaFacturadoProveedor: Number(detalle.precioListaSinIva || 0),
+          descuentosFacturadosProveedorTexto: combinarDescuentosTexto(
             descuentoGeneralPedidoTexto,
             descuentosToTexto(detalle.descuentosPorcentaje) ||
               descuentoValorToTexto(detalle.descuentoPorcentaje)
@@ -2278,6 +2366,8 @@ function PedidosProveedorPage() {
         accionExcedente: 'SIN_EXCEDENTE',
         precioListaProveedor: 0,
         descuentosProveedorTexto: '',
+        precioListaFacturadoProveedor: 0,
+        descuentosFacturadosProveedorTexto: '',
         ivaPorcentaje: 21,
         margenesPrecioPublicoTexto:
           formRecepcion.margenesPrecioPublicoGeneralTexto || '',
@@ -2325,8 +2415,82 @@ function PedidosProveedorPage() {
     );
   };
 
+  const validarRecepcionSinNegativos = () => {
+    const camposFactura = [
+      ['Costo s/IVA proveedor', formRecepcion.costoSinIvaProveedor],
+      ['Descuento proveedor', formRecepcion.descuentoProveedorImporte],
+      ['IVA proveedor', formRecepcion.ivaProveedorImporte],
+      ['Total factura', formRecepcion.totalFacturaProveedor],
+      ['Redondeo precio publico', formRecepcion.redondeoBase]
+    ];
+    const facturaNegativa = camposFactura.find(([, valor]) =>
+      numeroNegativo(valor)
+    );
+
+    if (facturaNegativa) {
+      return `${facturaNegativa[0]} no puede ser negativo`;
+    }
+
+    if (tienePorcentajeNegativo(formRecepcion.margenesPrecioPublicoGeneralTexto)) {
+      return 'Los margenes generales no pueden ser negativos';
+    }
+
+    for (const importe of otrosImportesRecepcion) {
+      if (numeroNegativo(importe.porcentaje)) {
+        return 'El porcentaje de impuestos u otros importes no puede ser negativo';
+      }
+
+      if (numeroNegativo(importe.importe)) {
+        return 'El importe de impuestos u otros importes no puede ser negativo';
+      }
+    }
+
+    for (const detalle of detallesRecepcion) {
+      const producto = detalle.producto || 'producto';
+      const camposDetalle = [
+        ['cantidad facturada', detalle.cantidadFacturada],
+        ['costo aceptado', detalle.precioListaProveedor],
+        ['lista facturada', detalle.precioListaFacturadoProveedor],
+        ['IVA', detalle.ivaPorcentaje],
+        ['precio publico nuevo', detalle.precioPublicoNuevo]
+      ];
+      const detalleNegativo = camposDetalle.find(([, valor]) =>
+        numeroNegativo(valor)
+      );
+
+      if (detalleNegativo) {
+        return `La ${detalleNegativo[0]} de ${producto} no puede ser negativa`;
+      }
+
+      if (tienePorcentajeNegativo(detalle.descuentosProveedorTexto)) {
+        return `Los descuentos aceptados de ${producto} no pueden ser negativos`;
+      }
+
+      if (tienePorcentajeNegativo(detalle.descuentosFacturadosProveedorTexto)) {
+        return `Los descuentos facturados de ${producto} no pueden ser negativos`;
+      }
+
+      if (tienePorcentajeNegativo(detalle.margenesPrecioPublicoTexto)) {
+        return `Los margenes de ${producto} no pueden ser negativos`;
+      }
+    }
+
+    return null;
+  };
+
   const guardarRecepcion = async () => {
     try {
+      const errorValidacion = validarRecepcionSinNegativos();
+
+      if (errorValidacion) {
+        setSnackbar({
+          open: true,
+          message: errorValidacion,
+          severity: 'warning'
+        });
+        return;
+      }
+
       const recepcionCreada = await createRecepcionPedidoProveedorRequest({
         pedidoProveedorId: pedidoRecepcion.id,
         ...formRecepcion,
@@ -2364,6 +2528,15 @@ function PedidosProveedorPage() {
             precioListaProveedor: Number(detalle.precioListaProveedor || 0),
             descuentosProveedor: parseDescuentos(
               detalle.descuentosProveedorTexto
+            ),
+            precioListaFacturadoProveedor: Number(
+              detalle.precioListaFacturadoProveedor ??
+                detalle.precioListaProveedor ??
+                0
+            ),
+            descuentosFacturadosProveedor: parseDescuentos(
+              detalle.descuentosFacturadosProveedorTexto ??
+                detalle.descuentosProveedorTexto
             ),
             ivaPorcentaje: Number(detalle.ivaPorcentaje || 0),
             margenesPrecioPublico: parseDescuentos(
@@ -2404,7 +2577,8 @@ function PedidosProveedorPage() {
   };
 
   const abrirGestionAdministrativa = (recepcion) => {
-    const importeGestion = calcularImporteGestionAdministrativa(recepcion);
+    const importeGestion =
+      calcularImporteGestionAdministrativaEstimado(recepcion);
 
     setRecepcionGestionAdministrativa(recepcion);
     setFormGestionAdministrativa({
@@ -2475,6 +2649,27 @@ function PedidosProveedorPage() {
       totalFacturaProveedor: Number(recepcion.totalFacturaProveedor || 0),
       observaciones: recepcion.observaciones || ''
     });
+    setDetallesCorregirFactura(
+      (recepcion.detalles || []).map((detalle) => ({
+        id: detalle.id,
+        producto:
+          (detalle.producto || detalle.pedidoProveedorDetalle?.producto)?.codigo
+            ? `${(detalle.producto || detalle.pedidoProveedorDetalle.producto).codigo} - ${(detalle.producto || detalle.pedidoProveedorDetalle.producto).nombre}`
+            : (detalle.producto || detalle.pedidoProveedorDetalle?.producto)?.nombre || '',
+        cantidadFacturada: Number(detalle.cantidadFacturada || 0),
+        precioListaProveedor: Number(detalle.precioListaProveedor || 0),
+        descuentosProveedor: detalle.descuentosProveedor || [],
+        precioListaFacturadoProveedor: Number(
+          detalle.precioListaFacturadoProveedor ??
+            detalle.precioListaProveedor ??
+            0
+        ),
+        descuentosFacturadosProveedorTexto:
+          descuentosToTexto(detalle.descuentosFacturadosProveedor) ||
+          descuentosToTexto(detalle.descuentosProveedor),
+        ivaPorcentaje: Number(detalle.ivaPorcentaje || 0)
+      }))
+    );
     setOpenCorregirFactura(true);
   };
 
@@ -2482,6 +2677,7 @@ function PedidosProveedorPage() {
     setOpenCorregirFactura(false);
     setRecepcionCorregirFactura(null);
     setFormCorregirFactura(facturaCorreccionInicial);
+    setDetallesCorregirFactura([]);
   };
 
   const handleCorregirFacturaChange = (event) => {
@@ -2493,13 +2689,76 @@ function PedidosProveedorPage() {
     }));
   };
 
+  const cambiarDetalleCorregirFactura = (id, name, value) => {
+    setDetallesCorregirFactura((actuales) =>
+      actuales.map((detalle) =>
+        detalle.id === id
+          ? {
+              ...detalle,
+              [name]: value
+            }
+          : detalle
+      )
+    );
+  };
+
   const guardarCorreccionFactura = async () => {
     if (!recepcionCorregirFactura) return;
 
     try {
+      if (numeroNegativo(formCorregirFactura.totalFacturaProveedor)) {
+        setSnackbar({
+          open: true,
+          message: 'Total proveedor no puede ser negativo',
+          severity: 'warning'
+        });
+        return;
+      }
+
+      for (const detalle of detallesCorregirFactura) {
+        if (numeroNegativo(detalle.precioListaFacturadoProveedor)) {
+          setSnackbar({
+            open: true,
+            message: `La lista facturada de ${detalle.producto} no puede ser negativa`,
+            severity: 'warning'
+          });
+          return;
+        }
+
+        if (numeroNegativo(detalle.ivaPorcentaje)) {
+          setSnackbar({
+            open: true,
+            message: `El IVA de ${detalle.producto} no puede ser negativo`,
+            severity: 'warning'
+          });
+          return;
+        }
+
+        if (tienePorcentajeNegativo(detalle.descuentosFacturadosProveedorTexto)) {
+          setSnackbar({
+            open: true,
+            message: `Los descuentos facturados de ${detalle.producto} no pueden ser negativos`,
+            severity: 'warning'
+          });
+          return;
+        }
+      }
+
       await corregirFacturaRecepcionRequest(
         recepcionCorregirFactura.id,
-        formCorregirFactura
+        {
+          ...formCorregirFactura,
+          detalles: detallesCorregirFactura.map((detalle) => ({
+            id: detalle.id,
+            precioListaFacturadoProveedor: Number(
+              detalle.precioListaFacturadoProveedor || 0
+            ),
+            descuentosFacturadosProveedor: parseDescuentos(
+              detalle.descuentosFacturadosProveedorTexto
+            ),
+            ivaPorcentaje: Number(detalle.ivaPorcentaje || 0)
+          }))
+        }
       );
       cerrarCorregirFactura();
       setOpenDetalle(false);
@@ -3949,6 +4208,7 @@ function PedidosProveedorPage() {
               name="costoSinIvaProveedor"
               value={formRecepcion.costoSinIvaProveedor}
               onChange={cambiarRecepcion}
+              inputProps={{ min: 0 }}
               helperText={`Sistema: ${formatoMoneda(totalesRecepcion.costoSinIvaSistema)} | Dif.: ${formatoMoneda(
                 Number(formRecepcion.costoSinIvaProveedor || 0) -
                   totalesRecepcion.costoSinIvaSistema
@@ -3961,6 +4221,7 @@ function PedidosProveedorPage() {
               name="descuentoProveedorImporte"
               value={formRecepcion.descuentoProveedorImporte}
               onChange={cambiarRecepcion}
+              inputProps={{ min: 0 }}
               helperText={`Sistema: ${formatoMoneda(totalesRecepcion.descuentoSistemaImporte)} | Dif.: ${formatoMoneda(
                 Number(formRecepcion.descuentoProveedorImporte || 0) -
                   totalesRecepcion.descuentoSistemaImporte
@@ -3973,6 +4234,7 @@ function PedidosProveedorPage() {
               name="ivaProveedorImporte"
               value={formRecepcion.ivaProveedorImporte}
               onChange={cambiarRecepcion}
+              inputProps={{ min: 0 }}
               helperText={`Sistema: ${formatoMoneda(totalesRecepcion.ivaProductos)} | Dif.: ${formatoMoneda(
                 Number(formRecepcion.ivaProveedorImporte || 0) -
                   totalesRecepcion.ivaProductos
@@ -3985,6 +4247,7 @@ function PedidosProveedorPage() {
               name="totalFacturaProveedor"
               value={formRecepcion.totalFacturaProveedor}
               onChange={cambiarRecepcion}
+              inputProps={{ min: 0 }}
               helperText={`Sistema: ${formatoMoneda(totalesRecepcion.totalFacturaSistema)} | Dif.: ${formatoMoneda(
                 totalesRecepcion.diferenciaFactura
               )}`}
@@ -3996,6 +4259,7 @@ function PedidosProveedorPage() {
               name="redondeoBase"
               value={formRecepcion.redondeoBase}
               onChange={cambiarRecepcion}
+              inputProps={{ min: 0 }}
               helperText="Ej: 1, 10, 50, 100"
               size="small"
               sx={{ gridColumn: { md: 'span 2' } }}
@@ -4103,6 +4367,7 @@ function PedidosProveedorPage() {
                           e.target.value
                         )
                       }
+                      inputProps={{ min: 0 }}
                     />
                     <CampoMoneda
                       label="Importe"
@@ -4114,6 +4379,7 @@ function PedidosProveedorPage() {
                           e.target.value
                         )
                       }
+                      inputProps={{ min: 0 }}
                     />
                     <Tooltip title="Eliminar">
                       <IconButton
@@ -4149,6 +4415,13 @@ function PedidosProveedorPage() {
                 detalle,
                 formRecepcion.redondeoBase
               );
+              const precioFacturadoRecepcion =
+                calcularPrecioFacturadoRecepcion(detalle);
+              const diferenciaPrecioFacturado =
+                calcularDiferenciaPrecioFacturadoDetalle(
+                  detalle,
+                  formRecepcion.redondeoBase
+                );
 
               return (
                 <Paper
@@ -4161,13 +4434,13 @@ function PedidosProveedorPage() {
                       display: 'grid',
                       gridTemplateColumns: {
                         xs: '1fr',
-                        md: '2.4fr 0.7fr 0.7fr 0.8fr 1fr 0.9fr 0.7fr 0.9fr 1fr 0.8fr'
+                        md: 'repeat(12, minmax(0, 1fr))'
                       },
                       gap: 1,
                       alignItems: 'flex-start'
                     }}
                   >
-                    <Box>
+                    <Box sx={{ gridColumn: { md: 'span 3' } }}>
                       {detalle.origen === 'NO_PEDIDO' && (
                         <Chip
                           label="NO PEDIDO"
@@ -4214,10 +4487,11 @@ function PedidosProveedorPage() {
                           e.target.value
                         )
                       }
+                      inputProps={{ min: 0 }}
                       size="small"
                     />
                     <CampoMoneda
-                      label="Lista proveedor s/IVA"
+                      label="Costo aceptado s/IVA"
                       value={detalle.precioListaProveedor}
                       onChange={(e) =>
                         cambiarDetalleRecepcion(
@@ -4226,11 +4500,12 @@ function PedidosProveedorPage() {
                           e.target.value
                         )
                       }
+                      inputProps={{ min: 0 }}
                       size="small"
-                      helperText=" "
+                      helperText="Para costo y precio venta"
                     />
                     <TextField
-                      label="Desc. proveedor"
+                      label="Desc. aceptado"
                       value={detalle.descuentosProveedorTexto}
                       onChange={(e) =>
                         cambiarDetalleRecepcion(
@@ -4241,7 +4516,35 @@ function PedidosProveedorPage() {
                       }
                       placeholder="20 o 10 + 10 + 5"
                       size="small"
-                      helperText=" "
+                      helperText="Para costo"
+                    />
+                    <CampoMoneda
+                      label="Lista facturada s/IVA"
+                      value={detalle.precioListaFacturadoProveedor}
+                      onChange={(e) =>
+                        cambiarDetalleRecepcion(
+                          detalle.tempId,
+                          'precioListaFacturadoProveedor',
+                          e.target.value
+                        )
+                      }
+                      inputProps={{ min: 0 }}
+                      size="small"
+                      helperText="Comprobante"
+                    />
+                    <TextField
+                      label="Desc. facturado"
+                      value={detalle.descuentosFacturadosProveedorTexto}
+                      onChange={(e) =>
+                        cambiarDetalleRecepcion(
+                          detalle.tempId,
+                          'descuentosFacturadosProveedorTexto',
+                          e.target.value
+                        )
+                      }
+                      placeholder="20 o 10 + 10 + 5"
+                      size="small"
+                      helperText="Comprobante"
                     />
                     <TextField
                       label="% IVA"
@@ -4254,6 +4557,7 @@ function PedidosProveedorPage() {
                           e.target.value
                         )
                       }
+                      inputProps={{ min: 0 }}
                       size="small"
                       helperText=" "
                     />
@@ -4281,6 +4585,7 @@ function PedidosProveedorPage() {
                           e.target.value
                         )
                       }
+                      inputProps={{ min: 0 }}
                       helperText={`Sugerido ${formatoMoneda(
                         precioRecepcion.precioPublicoRedondeado
                       )}`}
@@ -4342,6 +4647,18 @@ function PedidosProveedorPage() {
                       Con IVA: {formatoMoneda(precioRecepcion.precioConIva)}
                     </Typography>
                     <Typography variant="body2">
+                      Facturado c/IVA: {formatoMoneda(precioFacturadoRecepcion.precioConIva)}
+                    </Typography>
+                    {Math.abs(diferenciaPrecioFacturado) > 1 && (
+                      <Typography
+                        variant="body2"
+                        fontWeight={700}
+                        color={diferenciaPrecioFacturado > 0 ? 'error.main' : 'warning.main'}
+                      >
+                        Dif. precio: {formatoMoneda(diferenciaPrecioFacturado)}
+                      </Typography>
+                    )}
+                    <Typography variant="body2">
                       Calculado: {formatoMoneda(precioRecepcion.precioPublicoCalculado)}
                     </Typography>
                     <Typography variant="body2" fontWeight={700}>
@@ -4367,7 +4684,7 @@ function PedidosProveedorPage() {
               display: 'grid',
               gridTemplateColumns: {
                 xs: '1fr',
-                md: 'repeat(5, 1fr)'
+                md: 'repeat(6, 1fr)'
               },
               gap: 2
             }}
@@ -4394,7 +4711,28 @@ function PedidosProveedorPage() {
             >
               Diferencia: {formatoMoneda(totalesRecepcion.diferenciaFactura)}
             </Typography>
+            <Typography
+              fontWeight={700}
+              color={
+                Number(totalesRecepcion.diferenciaPrecioFacturaTotal || 0) > 1
+                  ? 'error.main'
+                  : 'text.primary'
+              }
+            >
+              A reclamar precio: {formatoMoneda(
+                totalesRecepcion.diferenciaPrecioFacturaTotal
+              )}
+            </Typography>
           </Paper>
+
+          {Number(totalesRecepcion.diferenciaPrecioFacturaTotal || 0) > 1 && (
+            <Alert severity="warning" sx={{ mt: 2 }}>
+              Hay precios facturados mayores al costo aceptado. La recepcion
+              tomara el costo aceptado para stock y precio de venta, y dejara
+              pendiente una gestion para solicitar nota de credito por{' '}
+              {formatoMoneda(totalesRecepcion.diferenciaPrecioFacturaTotal)}.
+            </Alert>
+          )}
 
           {recepcionesCargadas.length > 0 && (
             <Paper variant="outlined" sx={{ mt: 2, p: 2 }}>
@@ -5068,7 +5406,9 @@ function PedidosProveedorPage() {
                           ({recepcion.gestionAdministrativaEstado})
                           {' '}Importe estimado:{' '}
                           {formatoMoneda(
-                            calcularImporteGestionAdministrativa(recepcion)
+                            calcularImporteGestionAdministrativaEstimado(
+                              recepcion
+                            )
                           )}
                           {recepcion.gestionAdministrativaEstado ===
                             'RESUELTA' &&
@@ -5132,7 +5472,7 @@ function PedidosProveedorPage() {
                               display: 'grid',
                               gridTemplateColumns: {
                                 xs: '1fr',
-                                md: '2fr repeat(6, 1fr)'
+                                md: '2fr repeat(9, 1fr)'
                               },
                               gap: 1.5
                             }}
@@ -5178,6 +5518,29 @@ function PedidosProveedorPage() {
                               {detalle.accionExcedente}
                             </Typography>
                             <Typography variant="body2">
+                              Costo:{' '}
+                              {formatoMoneda(detalle.precioListaProveedor)}
+                            </Typography>
+                            <Typography variant="body2">
+                              Facturado:{' '}
+                              {formatoMoneda(
+                                detalle.precioListaFacturadoProveedor
+                              )}
+                            </Typography>
+                            <Typography
+                              variant="body2"
+                              color={
+                                Math.abs(
+                                  Number(detalle.diferenciaPrecioFactura || 0)
+                                ) > 1
+                                  ? 'warning.main'
+                                  : 'text.secondary'
+                              }
+                            >
+                              Dif. precio:{' '}
+                              {formatoMoneda(detalle.diferenciaPrecioFactura)}
+                            </Typography>
+                            <Typography variant="body2">
                               Precio publico nuevo:{' '}
                               {formatoMoneda(detalle.precioPublicoNuevo)}
                             </Typography>
@@ -5208,15 +5571,16 @@ function PedidosProveedorPage() {
         open={openCorregirFactura}
         onClose={cerrarCorregirFactura}
         fullWidth
-        maxWidth="md"
+        maxWidth="lg"
       >
         <DialogTitle>
           Corregir factura de recepcion
         </DialogTitle>
         <DialogContent>
           <Alert severity="info" sx={{ mb: 2 }}>
-            Esta correccion solo modifica datos del comprobante y recalcula la
-            diferencia de factura. No mueve stock ni cambia el control fisico.
+            Esta correccion modifica datos del comprobante y, si hubo
+            refacturacion, permite ajustar el precio facturado por producto.
+            No mueve stock ni cambia el costo aceptado.
           </Alert>
 
           <Box
@@ -5285,6 +5649,120 @@ function PedidosProveedorPage() {
                 fue cargado correctamente.
               </Alert>
             )}
+          </Box>
+
+          <Typography variant="h6" sx={{ mt: 3, mb: 1 }}>
+            Detalle facturado corregido
+          </Typography>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Use esta seccion cuando el proveedor anulo la factura anterior y
+            mando una nueva. El costo aceptado queda fijo; aca se corrige como
+            quedo facturado finalmente.
+          </Alert>
+          <Box sx={{ display: 'grid', gap: 1.5 }}>
+            {detallesCorregirFactura.map((detalle) => {
+              const diferenciaPrecio =
+                calcularDiferenciaPrecioCorreccionFactura(detalle);
+
+              return (
+                <Paper key={detalle.id} variant="outlined" sx={{ p: 2 }}>
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: {
+                        xs: '1fr',
+                        md: '2fr 0.7fr 1fr 1fr 1fr 0.7fr 1fr'
+                      },
+                      gap: 1.25,
+                      alignItems: 'flex-start'
+                    }}
+                  >
+                    <Box>
+                      <Typography variant="body2" fontWeight={700}>
+                        {detalle.producto}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Cant.: {detalle.cantidadFacturada}
+                      </Typography>
+                    </Box>
+                    <TextField
+                      label="Cant."
+                      value={detalle.cantidadFacturada}
+                      InputProps={{ readOnly: true }}
+                      size="small"
+                    />
+                    <CampoMoneda
+                      label="Costo aceptado"
+                      value={detalle.precioListaProveedor}
+                      InputProps={{ readOnly: true }}
+                      size="small"
+                      helperText="No se modifica"
+                    />
+                    <TextField
+                      label="Desc. aceptado"
+                      value={descuentosToTexto(detalle.descuentosProveedor)}
+                      InputProps={{ readOnly: true }}
+                      size="small"
+                      helperText="No se modifica"
+                    />
+                    <CampoMoneda
+                      label="Lista facturada"
+                      value={detalle.precioListaFacturadoProveedor}
+                      onChange={(event) =>
+                        cambiarDetalleCorregirFactura(
+                          detalle.id,
+                          'precioListaFacturadoProveedor',
+                          event.target.value
+                        )
+                      }
+                      inputProps={{ min: 0 }}
+                      size="small"
+                    />
+                    <TextField
+                      label="% IVA"
+                      type="number"
+                      value={detalle.ivaPorcentaje}
+                      onChange={(event) =>
+                        cambiarDetalleCorregirFactura(
+                          detalle.id,
+                          'ivaPorcentaje',
+                          event.target.value
+                        )
+                      }
+                      inputProps={{ min: 0 }}
+                      size="small"
+                    />
+                    <TextField
+                      label="Desc. facturado"
+                      value={detalle.descuentosFacturadosProveedorTexto}
+                      onChange={(event) =>
+                        cambiarDetalleCorregirFactura(
+                          detalle.id,
+                          'descuentosFacturadosProveedorTexto',
+                          event.target.value
+                        )
+                      }
+                      placeholder="20 o 10 + 10"
+                      size="small"
+                      helperText={`Dif.: ${formatoMoneda(diferenciaPrecio)}`}
+                    />
+                  </Box>
+                </Paper>
+              );
+            })}
+          </Box>
+
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: {
+                xs: '1fr',
+                md: 'repeat(4, 1fr)'
+              },
+              gap: 2,
+              mt: 2
+            }}
+          >
             <TextField
               label="Observaciones"
               name="observaciones"
@@ -5330,9 +5808,7 @@ function PedidosProveedorPage() {
               const diferencia =
                 Number(detalle.cantidadControlada || 0) -
                 Number(detalle.cantidadRecibida || 0);
-              const requiereGestion =
-                diferencia !== 0 ||
-                Number(detalle.cantidadFalladaControl || 0) > 0;
+              const requiereGestion = diferencia !== 0;
 
               return (
                 <Paper
@@ -5349,7 +5825,7 @@ function PedidosProveedorPage() {
                       display: 'grid',
                       gridTemplateColumns: {
                         xs: '1fr',
-                        md: '120px 120px 150px 130px 1fr'
+                        md: '120px 120px 150px 1fr'
                       },
                       gap: 2,
                       alignItems: 'center'
@@ -5381,19 +5857,6 @@ function PedidosProveedorPage() {
                     />
 
                     <TextField
-                      label="Fallado"
-                      type="number"
-                      value={detalle.cantidadFalladaControl}
-                      onChange={(event) =>
-                        cambiarDetalleControl(
-                          detalle.detalleId,
-                          'cantidadFalladaControl',
-                          event.target.value
-                        )
-                      }
-                    />
-
-                    <TextField
                       label="Observacion control"
                       value={detalle.observacionesControl}
                       onChange={(event) =>
@@ -5412,9 +5875,6 @@ function PedidosProveedorPage() {
                         `Faltan ${Math.abs(diferencia)} unidades: administracion debe revisar nota de credito o reclamo.`}
                       {diferencia > 0 &&
                         `Sobran ${diferencia} unidades: administracion debe revisar factura pendiente.`}
-                      {diferencia === 0 &&
-                        Number(detalle.cantidadFalladaControl || 0) > 0 &&
-                        'Hay mercaderia fallada: administracion debe revisar reclamo al proveedor.'}
                     </Alert>
                   )}
                 </Paper>
@@ -5460,8 +5920,7 @@ function PedidosProveedorPage() {
         <DialogContent>
           <Alert severity="info" sx={{ mb: 2 }}>
             Use esta opcion cuando el control ya fue cerrado y luego se detecta
-            un faltante, sobrante o error de control. Los productos fallados se
-            gestionan posteriormente mediante una devolucion al proveedor.
+            un faltante, sobrante o error de control.
           </Alert>
 
           <Box sx={{ display: 'grid', gap: 2 }}>
