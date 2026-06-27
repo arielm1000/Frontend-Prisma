@@ -277,6 +277,10 @@ const gestionAdministrativaInicial = {
   comprobanteNumero: '',
   fechaResolucion: fechaInputDesdeHoy(),
   importe: '',
+  notaCreditoNumero: '',
+  notaCreditoImporte: '',
+  facturaReemplazoNumero: '',
+  facturaReemplazoImporte: '',
   observacion: ''
 };
 
@@ -2612,6 +2616,47 @@ function PedidosProveedorPage() {
     if (!recepcionGestionAdministrativa) return;
 
     try {
+      if (
+        formGestionAdministrativa.comprobanteTipo ===
+        'NC_FACTURA_REEMPLAZO_PARCIAL'
+      ) {
+        if (numeroNegativo(formGestionAdministrativa.notaCreditoImporte)) {
+          setSnackbar({
+            open: true,
+            message: 'El importe de la nota de credito no puede ser negativo',
+            severity: 'warning'
+          });
+          return;
+        }
+
+        if (numeroNegativo(formGestionAdministrativa.facturaReemplazoImporte)) {
+          setSnackbar({
+            open: true,
+            message: 'El importe de la factura parcial no puede ser negativo',
+            severity: 'warning'
+          });
+          return;
+        }
+
+        if (Number(formGestionAdministrativa.notaCreditoImporte || 0) <= 0) {
+          setSnackbar({
+            open: true,
+            message: 'Debe cargar el importe de la nota de credito',
+            severity: 'warning'
+          });
+          return;
+        }
+
+        if (Number(formGestionAdministrativa.facturaReemplazoImporte || 0) <= 0) {
+          setSnackbar({
+            open: true,
+            message: 'Debe cargar el importe de la factura parcial',
+            severity: 'warning'
+          });
+          return;
+        }
+      }
+
       await resolverGestionAdministrativaRecepcionRequest(
         recepcionGestionAdministrativa.id,
         formGestionAdministrativa
@@ -6163,7 +6208,7 @@ function PedidosProveedorPage() {
         open={openGestionAdministrativa}
         onClose={cerrarGestionAdministrativa}
         fullWidth
-        maxWidth="sm"
+        maxWidth="md"
       >
         <DialogTitle>
           Resolver administracion
@@ -6206,22 +6251,28 @@ function PedidosProveedorPage() {
             >
               <MenuItem value="NOTA_CREDITO">Nota de credito</MenuItem>
               <MenuItem value="FACTURA">Factura</MenuItem>
+              <MenuItem value="NC_FACTURA_REEMPLAZO_PARCIAL">
+                Nota credito + factura parcial
+              </MenuItem>
               <MenuItem value="RECLAMO_RESUELTO">Reclamo resuelto</MenuItem>
               <MenuItem value="AJUSTE_INTERNO">Ajuste interno</MenuItem>
             </TextField>
 
-            <TextField
-              label="Numero comprobante"
-              name="comprobanteNumero"
-              value={formGestionAdministrativa.comprobanteNumero}
-              onChange={handleGestionAdministrativaChange}
-              helperText={
-                formGestionAdministrativa.responsable === 'PROVEEDOR' &&
-                formGestionAdministrativa.comprobanteTipo === 'NOTA_CREDITO'
-                  ? 'Si queda vacio se guarda como PENDIENTE'
-                  : ' '
-              }
-            />
+            {formGestionAdministrativa.comprobanteTipo !==
+              'NC_FACTURA_REEMPLAZO_PARCIAL' && (
+              <TextField
+                label="Numero comprobante"
+                name="comprobanteNumero"
+                value={formGestionAdministrativa.comprobanteNumero}
+                onChange={handleGestionAdministrativaChange}
+                helperText={
+                  formGestionAdministrativa.responsable === 'PROVEEDOR' &&
+                  formGestionAdministrativa.comprobanteTipo === 'NOTA_CREDITO'
+                    ? 'Si queda vacio se guarda como PENDIENTE'
+                    : ' '
+                }
+              />
+            )}
 
             <TextField
               label="Fecha resolucion"
@@ -6232,13 +6283,63 @@ function PedidosProveedorPage() {
               InputLabelProps={{ shrink: true }}
             />
 
-            <CampoMoneda
-              label="Importe"
-              name="importe"
-              value={formGestionAdministrativa.importe}
-              onChange={handleGestionAdministrativaChange}
-              sx={{ gridColumn: { md: '1 / 3' } }}
-            />
+            {formGestionAdministrativa.comprobanteTipo ===
+            'NC_FACTURA_REEMPLAZO_PARCIAL' ? (
+              <>
+                <Alert severity="info" sx={{ gridColumn: { md: '1 / 3' } }}>
+                  Use esta opcion cuando el proveedor emite una nota de credito
+                  por los productos mal facturados y una factura parcial nueva
+                  con los precios correctos. No mueve stock; solo registra ambos
+                  comprobantes en cuenta corriente.
+                </Alert>
+                <TextField
+                  label="Numero nota credito"
+                  name="notaCreditoNumero"
+                  value={formGestionAdministrativa.notaCreditoNumero}
+                  onChange={handleGestionAdministrativaChange}
+                  helperText="Si queda vacio se guarda como PENDIENTE"
+                />
+                <CampoMoneda
+                  label="Importe nota credito"
+                  name="notaCreditoImporte"
+                  value={formGestionAdministrativa.notaCreditoImporte}
+                  onChange={handleGestionAdministrativaChange}
+                  inputProps={{ min: 0 }}
+                />
+                <TextField
+                  label="Numero factura parcial"
+                  name="facturaReemplazoNumero"
+                  value={formGestionAdministrativa.facturaReemplazoNumero}
+                  onChange={handleGestionAdministrativaChange}
+                />
+                <CampoMoneda
+                  label="Importe factura parcial"
+                  name="facturaReemplazoImporte"
+                  value={formGestionAdministrativa.facturaReemplazoImporte}
+                  onChange={handleGestionAdministrativaChange}
+                  inputProps={{ min: 0 }}
+                />
+                <TextField
+                  label="Neto a favor estimado"
+                  value={formatoMoneda(
+                    Number(formGestionAdministrativa.notaCreditoImporte || 0) -
+                      Number(
+                        formGestionAdministrativa.facturaReemplazoImporte || 0
+                      )
+                  )}
+                  InputProps={{ readOnly: true }}
+                  sx={{ gridColumn: { md: '1 / 3' } }}
+                />
+              </>
+            ) : (
+              <CampoMoneda
+                label="Importe"
+                name="importe"
+                value={formGestionAdministrativa.importe}
+                onChange={handleGestionAdministrativaChange}
+                sx={{ gridColumn: { md: '1 / 3' } }}
+              />
+            )}
 
             <TextField
               label="Observacion"
