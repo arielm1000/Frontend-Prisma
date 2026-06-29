@@ -2960,6 +2960,13 @@ function PedidosProveedorPage() {
         row.proveedor?.nombreComercial || ''
     },
     {
+      field: 'proveedorRazonSocial',
+      headerName: 'Razon Social',
+      flex: 1,
+      valueGetter: (_, row) =>
+        row.proveedorRazonSocial?.razonSocial || 'Sin asignar'
+    },    
+    {
       field: 'empresaFacturacion',
       headerName: 'Empresa fact.',
       width: 190,
@@ -4547,6 +4554,7 @@ function PedidosProveedorPage() {
                       }
                       inputProps={{ min: 0 }}
                       size="small"
+                      sx={{ gridColumn: { md: 'span 2' } }}
                       helperText="Para costo y precio venta"
                     />
                     <TextField
@@ -4575,6 +4583,7 @@ function PedidosProveedorPage() {
                       }
                       inputProps={{ min: 0 }}
                       size="small"
+                      sx={{ gridColumn: { md: 'span 2' } }}
                       helperText="Comprobante"
                     />
                     <TextField
@@ -4635,6 +4644,7 @@ function PedidosProveedorPage() {
                         precioRecepcion.precioPublicoRedondeado
                       )}`}
                       size="small"
+                      sx={{ gridColumn: { md: 'span 2' } }}
                     />
                     <FormControlLabel
                       sx={{
