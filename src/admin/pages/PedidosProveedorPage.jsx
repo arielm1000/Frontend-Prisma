@@ -830,6 +830,7 @@ function PedidosProveedorPage() {
   const [pedidoRecepcion, setPedidoRecepcion] = useState(null);
   const [formRecepcion, setFormRecepcion] = useState(recepcionInicial);
   const [detallesRecepcion, setDetallesRecepcion] = useState([]);
+  const [guardandoRecepcion, setGuardandoRecepcion] = useState(false);
   const [openProductoNoPedido, setOpenProductoNoPedido] = useState(false);
   const [otrosImportesRecepcion, setOtrosImportesRecepcion] = useState([]);
   const [recepcionesCargadas, setRecepcionesCargadas] = useState([]);
@@ -2285,6 +2286,7 @@ function PedidosProveedorPage() {
     setPedidoRecepcion(null);
     setFormRecepcion(recepcionInicial);
     setDetallesRecepcion([]);
+    setGuardandoRecepcion(false);
     setOtrosImportesRecepcion([]);
     setRecepcionesCargadas([]);
   };
@@ -2420,6 +2422,33 @@ function PedidosProveedorPage() {
   };
 
   const validarRecepcionSinNegativos = () => {
+    const tieneRemito = Boolean(String(formRecepcion.numeroRemito || '').trim());
+    const tieneFacturaTexto = Boolean(
+      String(formRecepcion.numeroFactura || '').trim()
+    );
+    const tienePuntoVenta = Boolean(
+      String(formRecepcion.facturaPuntoVenta || '').trim()
+    );
+    const tieneNumeroFactura = Boolean(
+      String(formRecepcion.facturaNumero || '').trim()
+    );
+    const tieneFacturaEstructurada = tienePuntoVenta || tieneNumeroFactura;
+
+    if (!tieneRemito && !tieneFacturaTexto && !tieneFacturaEstructurada) {
+      return 'Debe cargar remito o factura para registrar la recepcion';
+    }
+
+    if (tieneFacturaEstructurada && (!tienePuntoVenta || !tieneNumeroFactura)) {
+      return 'Para cargar factura debe indicar punto de venta y numero';
+    }
+
+    if (
+      (tieneFacturaTexto || tieneFacturaEstructurada) &&
+      Number(formRecepcion.totalFacturaProveedor || 0) <= 0
+    ) {
+      return 'El total factura proveedor debe ser mayor a 0 cuando se carga una factura';
+    }
+
     const camposFactura = [
       ['Costo s/IVA proveedor', formRecepcion.costoSinIvaProveedor],
       ['Descuento proveedor', formRecepcion.descuentoProveedorImporte],
@@ -2483,6 +2512,8 @@ function PedidosProveedorPage() {
   };
 
   const guardarRecepcion = async () => {
+    if (guardandoRecepcion) return;
+
     try {
       const errorValidacion = validarRecepcionSinNegativos();
 
@@ -2494,6 +2525,8 @@ function PedidosProveedorPage() {
         });
         return;
       }
+
+      setGuardandoRecepcion(true);
 
       const recepcionCreada = await createRecepcionPedidoProveedorRequest({
         pedidoProveedorId: pedidoRecepcion.id,
@@ -2568,6 +2601,7 @@ function PedidosProveedorPage() {
         message: 'Factura cargada pendiente de control',
         severity: 'success'
       });
+      cerrarRecepcion();
     } catch (error) {
       console.log(error);
       setSnackbar({
@@ -2577,6 +2611,8 @@ function PedidosProveedorPage() {
           'Error guardando recepcion',
         severity: 'error'
       });
+    } finally {
+      setGuardandoRecepcion(false);
     }
   };
 
@@ -4871,15 +4907,15 @@ function PedidosProveedorPage() {
         </DialogContent>
 
         <DialogActions>
-          <Button onClick={cerrarRecepcion}>
+          <Button onClick={cerrarRecepcion} disabled={guardandoRecepcion}>
             Cancelar
           </Button>
           <Button
             variant="contained"
             onClick={guardarRecepcion}
-            disabled={detallesRecepcion.length === 0}
+            disabled={guardandoRecepcion || detallesRecepcion.length === 0}
           >
-            Guardar Recepcion
+            {guardandoRecepcion ? 'Guardando...' : 'Guardar Recepcion'}
           </Button>
         </DialogActions>
       </Dialog>
